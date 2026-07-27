@@ -1,0 +1,19 @@
+[package]
+name = "sourcetrait_cert_cli"
+version = "0.0.0-1"
+edition = "2024"
+description = "srcert: the command line over the certificate authority library"
+authors = ["SourceTrait <development@sourcetrait.com>"]
+license = "AGPL-3.0-or-later"
+repository = "https://github.com/sourcetrait/sourcetrait_cert"
+homepage = "https://sourcetrait.com"
+categories = []
+keywords = ["sourcetrait", "srcert", "tls", "certificate"]
+
+[[bin]]
+name = "srcert"
+path = "src/main.rs"
+
+[dependencies]
+clap.workspace = true
+sourcetrait_cert_lib.workspace = true
