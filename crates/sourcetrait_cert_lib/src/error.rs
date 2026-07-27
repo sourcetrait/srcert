@@ -28,8 +28,8 @@ pub enum CertError {
     },
 
     #[snafu(display(
-        "no profile named {name:?}; expected {path}. Install one first, or run \
-         `srcert profiles` to see what is available"
+        "no profile named {name:?}; expected {path}. Install one first - a \
+         consuming application places its own on a first start"
     ))]
     MissingProfile { name: String, path: String },
 

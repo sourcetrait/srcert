@@ -2,14 +2,21 @@
 
 ## struct Cli
 
-EVERY COMMAND NAMES ITS PROFILE FIRST, and there is no built-in fallback.
-That is the point of the tool rather than an inconvenience: what a
-certificate says is a per-application decision, so a run that did not
-name a profile would be minting something nobody chose.
+EVERY COMMAND NAMES A PROFILE, and there is no built-in fallback. That is
+the point of the tool rather than an inconvenience: what a certificate
+says is a per-application decision, so a run that did not name a profile
+would be minting something nobody chose.
 
-The profile is a positional ahead of the subcommand, so the shape reads
-`srcert <profile> <command>` - the profile scopes the whole invocation
-rather than being an option one command might forget to accept.
+THE VERB COMES FIRST: `srcert install quest <dir>`. The profile is a
+positional on each subcommand rather than one ahead of them all, which is
+a correction (the_user) to an earlier shape that read
+`srcert <profile> <command>`. Verb-first is how every neighbouring tool
+reads, and the repetition across four variants is the price of that.
+
+The cost is real and worth knowing rather than discovering: a new
+subcommand has to remember its own `profile` positional, where the old
+shape made it structurally impossible to forget. Nothing enforces it, so
+it is a convention the next variant has to follow.
 
 ## const SECRET_DATA_ENV
 

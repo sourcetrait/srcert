@@ -5,7 +5,7 @@ use sourcetrait_cert_lib as lib_cert;
 /// Default for `--secret-data`; sudo's environment reset strips it.
 const SECRET_DATA_ENV: &str = "XDGX_SECRET_DATA_HOME";
 
-/// Every command names the profile it acts against, first.
+/// Every command names the profile it acts against.
 #[derive(clap::Parser)]
 #[command(
     name = "srcert",
@@ -13,8 +13,6 @@ const SECRET_DATA_ENV: &str = "XDGX_SECRET_DATA_HOME";
     about = "Local TLS certificate authority, driven by named profiles"
 )]
 struct Cli {
-    /// The profile to act against, by name, as installed.
-    profile: String,
     /// Override the configuration home the profile is read from.
     #[arg(long, global = true)]
     config_home: Option<PathBuf>,
@@ -26,11 +24,15 @@ struct Cli {
 enum Command {
     /// Mint a local CA and the leaf it signs. Unprivileged.
     Generate {
+        /// The profile to act against, by name, as installed.
+        profile: String,
         /// Where to write; artifacts land in a `certs` subdirectory.
         dir: PathBuf,
     },
     /// Place the key material and make the system trust the CA.
     Install {
+        /// The profile to act against, by name, as installed.
+        profile: String,
         /// The dir passed to `generate`.
         dir: PathBuf,
         /// The secret DATA home; keys land in `sourcetrait/<name>/certs`.
@@ -45,6 +47,8 @@ enum Command {
     /// Confirm the CA is trusted and the keys are readable. Run
     /// UNPRIVILEGED.
     Verify {
+        /// The profile to act against, by name, as installed.
+        profile: String,
         #[arg(long)]
         secret_data: Option<PathBuf>,
         /// The CA cert to look for. Defaults to the installed copy.
@@ -54,7 +58,10 @@ enum Command {
         bundle: Option<PathBuf>,
     },
     /// Print the profile as it will be used, and where it was read from.
-    Show,
+    Show {
+        /// The profile to act against, by name, as installed.
+        profile: String,
+    },
 }
 
 pub fn run() -> lib_cert::Result<()> {
@@ -63,12 +70,10 @@ pub fn run() -> lib_cert::Result<()> {
         Some(path) => path,
         None => lib_cert::config_home()?,
     };
-    let profile = &cli.profile;
-
     match cli.command {
-        Command::Show => cmd_show(&config_home, profile),
-        Command::Generate { dir } => {
-            let config = lib_cert::load_profile(&config_home, profile)?;
+        Command::Show { profile } => cmd_show(&config_home, &profile),
+        Command::Generate { profile, dir } => {
+            let config = lib_cert::load_profile(&config_home, &profile)?;
             let files = lib_cert::generate(&config, &dir)?;
             for path in files.all() {
                 println!("{}", path.display());
@@ -76,12 +81,13 @@ pub fn run() -> lib_cert::Result<()> {
             Ok(())
         }
         Command::Install {
+            profile,
             dir,
             secret_data,
             trust_dir,
             update_command,
         } => {
-            let config = lib_cert::load_profile(&config_home, profile)?;
+            let config = lib_cert::load_profile(&config_home, &profile)?;
             let (secret_path, from_env) = resolve_secret_data(secret_data)?;
             cmd_install(
                 &dir,
@@ -93,11 +99,12 @@ pub fn run() -> lib_cert::Result<()> {
             )
         }
         Command::Verify {
+            profile,
             secret_data,
             ca_cert,
             bundle,
         } => {
-            let config = lib_cert::load_profile(&config_home, profile)?;
+            let config = lib_cert::load_profile(&config_home, &profile)?;
             let (secret_path, _) = resolve_secret_data(secret_data)?;
             cmd_verify(
                 &secret_path,

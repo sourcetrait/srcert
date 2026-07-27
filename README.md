@@ -13,13 +13,13 @@ installs the key material, and makes the system trust the authority. It exists
 so that a service on a single machine can be given a real TLS identity without
 a public authority and without hand-run OpenSSL recipes.
 
-Every command names a PROFILE first, and there is no built-in fallback:
+Every command names a PROFILE, and there is no built-in fallback:
 
 ```
-srcert <profile> show
-srcert <profile> generate <dir>
-srcert <profile> install <dir>
-srcert <profile> verify
+srcert show <profile>
+srcert generate <profile> <dir>
+srcert install <profile> <dir>
+srcert verify <profile>
 ```
 
 What a certificate says is a per-application decision, so an unnamed run would
