@@ -33,6 +33,7 @@ pub fn secret_certs_dir(secret_data: &Path, name: &str) -> PathBuf {
         .join("certs")
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CertFiles {
     pub authority_private: PathBuf,
     pub authority_public: PathBuf,
