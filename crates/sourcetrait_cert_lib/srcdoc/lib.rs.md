@@ -24,6 +24,13 @@ this crate can answer, because only this crate knows the layout. A face
 that stopped at generation would have pushed that path arithmetic into
 every consumer.
 
+`CertFiles` joined it for the reason one step further along. A consumer
+standing up TLS needs the four paths themselves rather than a yes or no,
+and it is the same knowledge `check_exists` answers from - so leaving it
+reachable only at `generate::CertFiles` would have meant either a second
+path-naming site in every consumer, or a face that says whether the
+material exists but not where it is.
+
 `CertGenConfig` is reachable at `config::CertGenConfig` rather than
 through this block. That is not an oversight and not quite a decision:
 the type is the profile schema, so a consumer that wants to validate

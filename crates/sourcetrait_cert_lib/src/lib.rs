@@ -13,14 +13,11 @@ pub(crate) use std::{
     process,
 };
 
-pub(crate) use crate::{
-    config::CertGenConfig,
-    generate::CertFiles,
-};
+pub(crate) use crate::config::CertGenConfig;
 
 pub use crate::config::{AuthorityConfig, EntityConfig, EntityUsage};
 pub use crate::error::{CertError, Result};
-pub use crate::generate::{certs_dir, generate, secret_certs_dir};
+pub use crate::generate::{CertFiles, certs_dir, generate, secret_certs_dir};
 pub use crate::install::{
     InstallPlan,
     Installed,
