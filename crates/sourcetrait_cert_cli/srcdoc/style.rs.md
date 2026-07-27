@@ -57,6 +57,15 @@ itself, which is what makes both branches lockable. The escapes come from
 help, so our lines and `--help` agree about colour without a second
 dependency or a second terminal-detection story.
 
+## fn emit
+
+The home collapse runs HERE as well as in `pretty_path`, and that is the
+half that was missing. A message this crate composes can collapse its own
+paths; a cause raised by the library cannot, and that is the line an
+operator reads most often. Collapsing at the emitter covers both, and
+collapsing an already-collapsed string is a no-op since no home substring
+survives the first pass.
+
 ## fn report
 
 The items are dimmed rather than cyan. The headline is the message and

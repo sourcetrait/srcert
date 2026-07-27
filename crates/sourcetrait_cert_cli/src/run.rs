@@ -66,8 +66,7 @@ enum Command {
     },
 }
 
-/// A failure carrying what was being attempted, so the reported line
-/// reads `Unable to <what>: <cause>`.
+/// A failure plus what was being attempted, for the reported line.
 pub struct Failed {
     what: &'static str,
     cause: Box<lib_cert::CertError>,

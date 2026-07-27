@@ -18,6 +18,18 @@ subcommand has to remember its own `profile` positional, where the old
 shape made it structurally impossible to forget. Nothing enforces it, so
 it is a convention the next variant has to follow.
 
+## struct Failed
+
+Carries the ATTEMPT beside the cause, so a reported line reads
+`Unable to <what>: <cause>`. Neither half knows the other on its own: the
+error says why it stopped and only the dispatch knows which verb ran, so
+they are composed at the one place holding both rather than every error
+in the library learning to phrase itself that way.
+
+The cause is boxed because `CertError` keeps its own sources and is
+around 136 bytes, which trips the large-error lint at the standing
+zero-warning bar. One allocation on a path that is already failing.
+
 ## const SECRET_DATA_ENV
 
 sudo's environment reset strips it, so an elevated run needs the
