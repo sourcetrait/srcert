@@ -26,6 +26,32 @@ was going to fail anyway. Preflight-before-mutation is not enough on its
 own, because the prompt sits outside the operation. Every check first,
 then ask, then act.
 
+## fn check_exists
+
+The dual of `preflight`, and it sits beside it because the two ask one
+question from opposite ends: preflight requires the secret directory to be
+ABSENT before installing, this requires its four artifacts to be PRESENT
+before a consumer leans on them.
+
+It lives in the library rather than in a consumer because the library owns
+the path layout. A daemon reconstructing `secret_certs_dir` plus the four
+filenames would duplicate exactly the knowledge this crate exists to hold,
+and would then drift the day a filename changes.
+
+PRESENCE IS NOT VALIDITY, and the gap is deliberate rather than unfinished.
+It converts a mysterious handshake failure into a clear startup failure for
+the two common cases - never minted, and material deleted - and says
+nothing about an expired certificate or one that no longer matches the
+profile that asked for it. Answering those needs the trust store resolved
+too, and a daemon refusing to start because no trust store was detected is
+a worse failure mode than the one being prevented, which is why `verify` is
+not what a consumer calls at startup.
+
+ALL FOUR ARE REQUIRED, so a partial tree reads absent. A handshake needs
+the leaf and its key, and `verify` reads both private keys, so no subset is
+a serviceable state - and a caller that treated one as enough would report
+ready and fail later.
+
 ## fn install
 
 RUNS UNPRIVILEGED, elevating only the few commands that touch the system

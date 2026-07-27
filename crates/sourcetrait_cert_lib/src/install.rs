@@ -63,6 +63,12 @@ pub fn preflight(plan: &InstallPlan<'_>) -> Result<()> {
     Ok(())
 }
 
+/// Whether a profile's four installed artifacts are all present.
+pub fn check_exists(secret_data: &Path, name: &str) -> bool {
+    let secret_dir = crate::generate::secret_certs_dir(secret_data, name);
+    CertFiles::new(&secret_dir, name).exist()
+}
+
 /// Place the key material, then make the system trust the CA.
 pub fn install(plan: &InstallPlan<'_>) -> Result<Installed> {
     preflight(plan)?;

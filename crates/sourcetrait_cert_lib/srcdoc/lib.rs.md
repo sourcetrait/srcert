@@ -18,6 +18,12 @@ consumer and a daemon calling `install_profile` at startup is another,
 and the second reaches for profile paths and the entity types to report
 what it placed.
 
+`check_exists` is on it for the same consumer and is the clearer case for
+the shape: the daemon asks a question about the INSTALLED state that only
+this crate can answer, because only this crate knows the layout. A face
+that stopped at generation would have pushed that path arithmetic into
+every consumer.
+
 `CertGenConfig` is reachable at `config::CertGenConfig` rather than
 through this block. That is not an oversight and not quite a decision:
 the type is the profile schema, so a consumer that wants to validate
