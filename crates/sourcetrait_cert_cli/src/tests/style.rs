@@ -3,6 +3,7 @@ use crate::style::{
     Kind,
     accepted,
     collapse_home,
+    options,
     paint,
 };
 
@@ -55,6 +56,22 @@ fn colour_is_emitted_only_when_it_is_asked_for() {
     assert!(painted.contains('\u{1b}'), "an escape is emitted: {painted:?}");
     assert!(painted.contains('x'));
     assert_eq!(paint(style, "x", false), "x");
+}
+
+/// The whole group is dim and only the default is bold, so the plain
+/// form has to stay exactly the text a reader would type.
+#[test]
+fn the_option_group_is_plain_text_without_colour() {
+    assert_eq!(options(false), "[yes/no]");
+
+    let coloured = options(true);
+    assert!(coloured.contains("[yes/"), "{coloured:?}");
+    assert!(coloured.contains("no"), "{coloured:?}");
+    assert!(coloured.contains(']'), "{coloured:?}");
+    assert!(
+        coloured.matches('\u{1b}').count() > 2,
+        "three spans are styled separately: {coloured:?}"
+    );
 }
 
 #[test]

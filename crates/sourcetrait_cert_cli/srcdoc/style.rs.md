@@ -79,6 +79,21 @@ Splits on newlines so a multi-line cause keeps the prefix on every line.
 Without that, only the first line of a wrapped error is attributable and
 the rest reads as though it came from somewhere else.
 
+## fn options
+
+The whole group is dim and the DEFAULT is bold within it, so `[yes/no]`
+reads as one de-emphasised unit while the default still stands out
+inside it (the_user's form).
+
+It is built from three separately painted spans rather than one nested
+render, and that is a correctness detail rather than a style choice:
+re-emitting a colour does NOT clear bold, so a naive nesting leaves the
+closing bracket bold. Each span carries its own reset.
+
+The uncoloured form must stay exactly `[yes/no]`, which is locked -
+that is the text a reader is being asked to type, and it is what a
+non-terminal stream gets.
+
 ## fn confirm
 
 The default is refusal, and refusal is also what a non-terminal stdin

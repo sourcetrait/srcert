@@ -150,15 +150,25 @@ fn emit(kind: Kind, lines: &[String]) {
     }
 }
 
+/// The option group: all of it dim, the default bold within it.
+pub(crate) fn options(colour: bool) -> String {
+    format!(
+        "{}{}{}",
+        paint(dim_style(), "[yes/", colour),
+        paint(dim_style().bold(), "no", colour),
+        paint(dim_style(), "]", colour),
+    )
+}
+
 /// Ask before something the answer cannot be taken back from.
 pub fn confirm(question: &str) -> bool {
     let colour = std::io::stderr().is_terminal();
     let mut err = std::io::stderr();
     let _ = write!(
         err,
-        "{} {question} [yes/{}] ",
+        "{} {question} {} ",
         prefix(Kind::Ask, colour),
-        paint(dim_style(), "no", colour),
+        options(colour),
     );
     let _ = err.flush();
 
