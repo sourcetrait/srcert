@@ -15,5 +15,6 @@ name = "srcert"
 path = "src/main.rs"
 
 [dependencies]
+anstyle.workspace = true
 clap.workspace = true
 sourcetrait_cert_lib.workspace = true

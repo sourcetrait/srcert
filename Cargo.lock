@@ -519,6 +519,7 @@ dependencies = [
 name = "sourcetrait_cert_cli"
 version = "0.0.0-2"
 dependencies = [
+ "anstyle",
  "clap",
  "sourcetrait_cert_lib",
 ]

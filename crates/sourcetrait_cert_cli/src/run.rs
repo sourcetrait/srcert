@@ -2,6 +2,8 @@ use std::path::{Path, PathBuf};
 
 use sourcetrait_cert_lib as lib_cert;
 
+use crate::style;
+
 /// Default for `--secret-data`; sudo's environment reset strips it.
 const SECRET_DATA_ENV: &str = "XDGX_SECRET_DATA_HOME";
 
@@ -64,55 +66,67 @@ enum Command {
     },
 }
 
-pub fn run() -> lib_cert::Result<()> {
+/// A failure carrying what was being attempted, so the reported line
+/// reads `Unable to <what>: <cause>`.
+pub struct Failed {
+    what: &'static str,
+    cause: Box<lib_cert::CertError>,
+}
+
+impl std::fmt::Display for Failed {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Unable to {}: {}", self.what, self.cause)
+    }
+}
+
+/// Names the attempt at the only place that knows which verb ran.
+fn failing(what: &'static str) -> impl FnOnce(lib_cert::CertError) -> Failed {
+    move |cause| Failed {
+        what,
+        cause: Box::new(cause),
+    }
+}
+
+pub fn run() -> Result<(), Failed> {
     let cli = <Cli as clap::Parser>::parse();
     let config_home = match cli.config_home {
         Some(path) => path,
-        None => lib_cert::config_home()?,
+        None => lib_cert::config_home().map_err(failing("resolve the configuration home"))?,
     };
     match cli.command {
-        Command::Show { profile } => cmd_show(&config_home, &profile),
-        Command::Generate { profile, dir } => {
-            let config = lib_cert::load_profile(&config_home, &profile)?;
-            let files = lib_cert::generate(&config, &dir)?;
-            for path in files.all() {
-                println!("{}", path.display());
-            }
-            Ok(())
+        Command::Show { profile } => {
+            cmd_show(&config_home, &profile).map_err(failing("read the profile"))
         }
+        Command::Generate { profile, dir } => cmd_generate(&config_home, &profile, &dir)
+            .map_err(failing("generate the certificates")),
         Command::Install {
             profile,
             dir,
             secret_data,
             trust_dir,
             update_command,
-        } => {
-            let config = lib_cert::load_profile(&config_home, &profile)?;
-            let (secret_path, from_env) = resolve_secret_data(secret_data)?;
-            cmd_install(
-                &dir,
-                &config.name,
-                &secret_path,
-                from_env,
-                trust_dir.as_deref(),
-                update_command.as_deref(),
-            )
-        }
+        } => cmd_install(
+            &config_home,
+            &profile,
+            &dir,
+            secret_data,
+            trust_dir.as_deref(),
+            update_command.as_deref(),
+        )
+        .map_err(failing("install the certificates")),
         Command::Verify {
             profile,
             secret_data,
             ca_cert,
             bundle,
-        } => {
-            let config = lib_cert::load_profile(&config_home, &profile)?;
-            let (secret_path, _) = resolve_secret_data(secret_data)?;
-            cmd_verify(
-                &secret_path,
-                &config.name,
-                ca_cert.as_deref(),
-                bundle.as_deref(),
-            )
-        }
+        } => cmd_verify(
+            &config_home,
+            &profile,
+            secret_data,
+            ca_cert.as_deref(),
+            bundle.as_deref(),
+        )
+        .map_err(failing("verify the installation")),
     }
 }
 
@@ -132,13 +146,6 @@ fn resolve_secret_data(explicit: Option<PathBuf>) -> lib_cert::Result<(PathBuf, 
 fn cmd_show(config_home: &Path, profile: &str) -> lib_cert::Result<()> {
     let path = lib_cert::profile_path(config_home, profile)?;
     let config = lib_cert::load_profile(config_home, profile)?;
-    println!("profile: {}", path.display());
-    println!("name: {}", config.name);
-    println!("organization: {}", config.organization);
-    println!("validity_days: {}", config.validity_days);
-    println!("authority: {}", config.authority.common_name);
-    println!("entity: {}", config.entity.common_name);
-    println!("subject_alt_names: {}", config.entity.subject_alt_names.join(", "));
     let usages: Vec<&str> = config
         .entity
         .usages
@@ -148,73 +155,121 @@ fn cmd_show(config_home: &Path, profile: &str) -> lib_cert::Result<()> {
             lib_cert::EntityUsage::Client => "client",
         })
         .collect();
-    println!("usages: {}", usages.join(", "));
+    style::report(
+        style::Kind::Info,
+        &format!("Profile {}:", style::resource(&path)),
+        &[
+            format!("name: {}", config.name),
+            format!("organization: {}", config.organization),
+            format!("validity_days: {}", config.validity_days),
+            format!("authority: {}", config.authority.common_name),
+            format!("entity: {}", config.entity.common_name),
+            format!(
+                "subject_alt_names: {}",
+                config.entity.subject_alt_names.join(", ")
+            ),
+            format!("usages: {}", usages.join(", ")),
+        ],
+    );
+    Ok(())
+}
+
+fn cmd_generate(config_home: &Path, profile: &str, dir: &Path) -> lib_cert::Result<()> {
+    let config = lib_cert::load_profile(config_home, profile)?;
+    let files = lib_cert::generate(&config, dir)?;
+    let items: Vec<String> = files.all().iter().map(|p| style::pretty_path(p)).collect();
+    style::report(style::Kind::Done, "Generated:", &items);
     Ok(())
 }
 
 fn cmd_install(
+    config_home: &Path,
+    profile: &str,
     dir: &Path,
-    name: &str,
-    secret_data: &Path,
-    secret_data_from_env: bool,
+    secret_data: Option<PathBuf>,
     trust_dir: Option<&Path>,
     update_command: Option<&str>,
 ) -> lib_cert::Result<()> {
+    let config = lib_cert::load_profile(config_home, profile)?;
+    let (secret_home, from_env) = resolve_secret_data(secret_data)?;
     let (target, detected) = lib_cert::resolve_target(trust_dir, update_command)?;
     match detected {
-        Some(id) => eprintln!("srcert: trust store {id}"),
-        None => eprintln!("srcert: trust store from arguments"),
+        Some(id) => style::line(
+            style::Kind::Info,
+            &format!("Trust store {}", style::named(id)),
+        ),
+        None => style::line(style::Kind::Info, "Trust store from arguments"),
     }
-    let secret = if secret_data_from_env {
-        lib_cert::SecretData::FromEnv(secret_data)
+
+    if !style::confirm("Ready to install as super-user?") {
+        return Err(lib_cert::CertError::Msg {
+            message: String::from("declined at the super-user prompt"),
+        });
+    }
+
+    let secret = if from_env {
+        lib_cert::SecretData::FromEnv(&secret_home)
     } else {
-        lib_cert::SecretData::Explicit(secret_data)
+        lib_cert::SecretData::Explicit(&secret_home)
     };
     let installed = lib_cert::install(&lib_cert::InstallPlan {
         cert_dir: dir,
-        name,
+        name: &config.name,
         target: &target,
         secret_data: secret,
     })?;
-    println!("{}", installed.trusted_at.display());
-    for path in &installed.secrets {
-        println!("{}", path.display());
-    }
+
+    let mut items = vec![style::pretty_path(&installed.trusted_at)];
+    items.extend(installed.secrets.iter().map(|p| style::pretty_path(p)));
+    style::report(style::Kind::Done, "Installed:", &items);
+
     match installed.staging {
-        lib_cert::Staging::Removed(path) => {
-            eprintln!("srcert: removed staging {}", path.display());
-        }
-        lib_cert::Staging::Kept { path, reason } => {
-            eprintln!(
-                "srcert: staging {} still holds a CA private key - {reason}",
-                path.display(),
-            );
-        }
+        lib_cert::Staging::Removed(path) => style::line(
+            style::Kind::Info,
+            &format!("Removed staging {}", style::resource(&path)),
+        ),
+        lib_cert::Staging::Kept { path, reason } => style::line(
+            style::Kind::Ask,
+            &format!(
+                "Staging {} still holds a CA private key - {reason}",
+                style::resource(&path)
+            ),
+        ),
     }
     Ok(())
 }
 
 fn cmd_verify(
-    secret_data: &Path,
-    name: &str,
+    config_home: &Path,
+    profile: &str,
+    secret_data: Option<PathBuf>,
     ca_cert: Option<&Path>,
     bundle: Option<&Path>,
 ) -> lib_cert::Result<()> {
+    let config = lib_cert::load_profile(config_home, profile)?;
+    let (secret_home, _) = resolve_secret_data(secret_data)?;
     let source = lib_cert::resolve_source(bundle)?;
     let verified = lib_cert::verify(&lib_cert::VerifyPlan {
-        secret_data,
-        name,
+        secret_data: &secret_home,
+        name: &config.name,
         source: &source,
         ca_cert,
     })?;
-    for path in &verified.keys_read {
-        println!("key readable: {}", path.display());
-    }
+    let items: Vec<String> = verified
+        .keys_read
+        .iter()
+        .map(|p| style::pretty_path(p))
+        .collect();
+    style::report(style::Kind::Info, "Keys readable:", &items);
+
     if !verified.ca_trusted {
         return Err(lib_cert::CertError::Msg {
-            message: format!("CA is not trusted in {}", verified.trust_source),
+            message: format!("the CA is not trusted in {}", verified.trust_source),
         });
     }
-    println!("ca trusted: {}", verified.trust_source);
+    style::line(
+        style::Kind::Done,
+        &format!("CA trusted in {}", style::named(&verified.trust_source)),
+    );
     Ok(())
 }

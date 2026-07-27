@@ -1,8 +1,9 @@
 mod run;
+mod style;
 
 fn main() {
-    if let Err(e) = run::run() {
-        eprintln!("srcert: {e}");
+    if let Err(failed) = run::run() {
+        style::line(style::Kind::Fail, &failed.to_string());
         std::process::exit(1);
     }
 }
