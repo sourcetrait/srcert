@@ -94,6 +94,22 @@ The uncoloured form must stay exactly `[yes/no]`, which is locked -
 that is the text a reader is being asked to type, and it is what a
 non-terminal stream gets.
 
+## fn fail_detail
+
+A SUB-ERROR RATHER THAN A LIST, and the two shapes are deliberately
+different. A list keeps the prefix on every line so each enumerated
+result stays attributable; this indents its detail to align under the
+prefix instead, because the detail continues the sentence above it rather
+than being another item.
+
+## fn attention
+
+Yellow marks the resource a failure is ABOUT. Cyan still marks a resource
+a message merely NAMES, which is why `attention_named` exists beside it -
+same colour as `named`, but keyed to stderr, since a failure and its
+detail ride that stream together and a mixed decision would colour half a
+line.
+
 ## fn confirm
 
 The default is refusal, and refusal is also what a non-terminal stdin

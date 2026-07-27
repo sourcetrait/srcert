@@ -102,6 +102,34 @@ pub fn named(name: &str) -> String {
     paint(resource_style(), name, std::io::stdout().is_terminal())
 }
 
+/// The resource a failure is ABOUT, rather than one merely named.
+pub fn attention(path: &Path) -> String {
+    let style = anstyle::Style::new().fg_color(Some(anstyle::AnsiColor::Yellow.into()));
+    paint(style, &pretty_path(path), std::io::stderr().is_terminal())
+}
+
+/// A name mentioned inside a failure, which rides the same stream.
+pub fn attention_named(name: &str) -> String {
+    paint(resource_style(), name, std::io::stderr().is_terminal())
+}
+
+/// A failure with its detail indented beneath it rather than listed.
+pub fn fail_detail(headline: &str, details: &[String]) {
+    let colour = stream_is_terminal(Kind::Fail);
+    let home = std::env::var("HOME").ok();
+    let prefix = prefix(Kind::Fail, colour);
+    let pad = " ".repeat(NAME.len() + 3);
+
+    let mut text = format!("{prefix} {}\n", collapse_home(headline, home.as_deref()));
+    for detail in details {
+        text.push_str(&format!(
+            "{pad}{}\n",
+            collapse_home(detail, home.as_deref())
+        ));
+    }
+    let _ = std::io::stderr().write_all(text.as_bytes());
+}
+
 fn prefix(kind: Kind, colour: bool) -> String {
     paint(kind.colour(), &format!("[{NAME}]"), colour)
 }

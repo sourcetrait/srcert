@@ -32,14 +32,14 @@ pub struct Installed {
     pub staging: Staging,
 }
 
-/// Place the key material, then make the system trust the CA.
-pub fn install(plan: &InstallPlan<'_>) -> Result<Installed> {
+/// Every check, before anything is done and before anything is asked.
+pub fn preflight(plan: &InstallPlan<'_>) -> Result<()> {
     let source_dir = crate::generate::certs_dir(plan.cert_dir);
     let files = CertFiles::new(&source_dir, plan.name);
     if !files.exist() {
-        return Err(CertError::NotACertDir {
+        return Err(CertError::UnrecognizedCertSources {
             path: source_dir.display().to_string(),
-            reason: format!("missing `{}` artifacts", plan.name),
+            name: plan.name.to_string(),
         });
     }
 
@@ -60,6 +60,17 @@ pub fn install(plan: &InstallPlan<'_>) -> Result<Installed> {
             path: secret_dir.display().to_string(),
         });
     }
+    Ok(())
+}
+
+/// Place the key material, then make the system trust the CA.
+pub fn install(plan: &InstallPlan<'_>) -> Result<Installed> {
+    preflight(plan)?;
+
+    let source_dir = crate::generate::certs_dir(plan.cert_dir);
+    let files = CertFiles::new(&source_dir, plan.name);
+    let secret_dir = crate::generate::secret_certs_dir(plan.secret_data.path(), plan.name);
+
     let created = create_private_chain(&secret_dir)?;
     let mut secrets = Vec::new();
     for source in [

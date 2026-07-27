@@ -78,6 +78,21 @@ impl std::fmt::Display for Failed {
     }
 }
 
+/// Render a failure; a cause with a shape of its own is given it.
+pub fn report(failed: &Failed) {
+    if let lib_cert::CertError::UnrecognizedCertSources { path, name } = failed.cause.as_ref() {
+        style::fail_detail(
+            &format!(
+                "Unrecognized layout for certificate sources: {}",
+                style::attention(Path::new(path))
+            ),
+            &[format!("Missing {} files", style::attention_named(name))],
+        );
+        return;
+    }
+    style::line(style::Kind::Fail, &failed.to_string());
+}
+
 /// Names the attempt at the only place that knows which verb ran.
 fn failing(what: &'static str) -> impl FnOnce(lib_cert::CertError) -> Failed {
     move |cause| Failed {
@@ -192,6 +207,21 @@ fn cmd_install(
     let config = lib_cert::load_profile(config_home, profile)?;
     let (secret_home, from_env) = resolve_secret_data(secret_data)?;
     let (target, detected) = lib_cert::resolve_target(trust_dir, update_command)?;
+
+    let secret = if from_env {
+        lib_cert::SecretData::FromEnv(&secret_home)
+    } else {
+        lib_cert::SecretData::Explicit(&secret_home)
+    };
+    let plan = lib_cert::InstallPlan {
+        cert_dir: dir,
+        name: &config.name,
+        target: &target,
+        secret_data: secret,
+    };
+
+    lib_cert::preflight(&plan)?;
+
     match detected {
         Some(id) => style::line(
             style::Kind::Info,
@@ -206,17 +236,7 @@ fn cmd_install(
         });
     }
 
-    let secret = if from_env {
-        lib_cert::SecretData::FromEnv(&secret_home)
-    } else {
-        lib_cert::SecretData::Explicit(&secret_home)
-    };
-    let installed = lib_cert::install(&lib_cert::InstallPlan {
-        cert_dir: dir,
-        name: &config.name,
-        target: &target,
-        secret_data: secret,
-    })?;
+    let installed = lib_cert::install(&plan)?;
 
     let mut items = vec![style::pretty_path(&installed.trusted_at)];
     items.extend(installed.secrets.iter().map(|p| style::pretty_path(p)));

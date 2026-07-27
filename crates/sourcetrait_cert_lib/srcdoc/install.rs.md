@@ -12,6 +12,20 @@ correctly is our job. An explicitly passed path is the CALLER asserting a
 location, and a typo there must fail loudly rather than conjure a deep
 tree, exactly as for the trust directory.
 
+## fn preflight
+
+Public so a CALLER can run the checks early, and that is the whole
+reason it was split out. `install` runs it for itself regardless - a
+library cannot depend on having been checked first - so the double call
+is deliberate rather than an oversight, and it is a handful of path
+tests.
+
+What forced it: the command line asks for elevation before installing,
+and an unvalidated prompt asks the operator to authorise something that
+was going to fail anyway. Preflight-before-mutation is not enough on its
+own, because the prompt sits outside the operation. Every check first,
+then ask, then act.
+
 ## fn install
 
 RUNS UNPRIVILEGED, elevating only the few commands that touch the system

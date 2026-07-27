@@ -3,7 +3,7 @@ mod style;
 
 fn main() {
     if let Err(failed) = run::run() {
-        style::line(style::Kind::Fail, &failed.to_string());
+        run::report(&failed);
         std::process::exit(1);
     }
 }

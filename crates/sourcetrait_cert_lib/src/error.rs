@@ -51,8 +51,11 @@ pub enum CertError {
     #[snafu(display("{what} {path} is not a directory"))]
     NotADir { what: String, path: String },
 
-    #[snafu(display("{path} is not a directory produced by `generate`: {reason}"))]
-    NotACertDir { path: String, reason: String },
+    #[snafu(display(
+        "unrecognized layout for certificate sources: {path}; missing \
+         {name} files"
+    ))]
+    UnrecognizedCertSources { path: String, name: String },
 
     #[snafu(display("`{command}` failed ({status}): {stderr}"))]
     Command {

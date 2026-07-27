@@ -30,6 +30,17 @@ The cause is boxed because `CertError` keeps its own sources and is
 around 136 bytes, which trips the large-error lint at the standing
 zero-warning bar. One allocation on a path that is already failing.
 
+## fn report
+
+Most causes read as `Unable to <what>: <cause>`. A cause that deserves
+its own wording is matched here rather than being phrased inside the
+library, because the wording is presentation and the library's `Display`
+has to stay plain, comparable and free of escape codes.
+
+Matching one variant does not generalise, and that is fine: the default
+arm covers everything, and a second bespoke case is another arm rather
+than a mechanism.
+
 ## const SECRET_DATA_ENV
 
 sudo's environment reset strips it, so an elevated run needs the
@@ -48,8 +59,14 @@ that distinction here would turn a typo into a conjured tree.
 
 ## fn cmd_install
 
+THE PREFLIGHT RUNS BEFORE ANYTHING IS PRINTED OR ASKED. The library
+checks again for itself, so this call exists purely so that a run which
+cannot succeed fails before the operator is asked to authorise an
+elevation for it. It also means a failed install says nothing about the
+trust store, which is the right amount to say.
+
 Prints which trust store was detected, or that it came from arguments,
-before doing anything. On a box with more than one candidate store that
+once the run is known to be able to proceed. On a box with more than one candidate store that
 line is the only way to tell which set of anchors an install actually
 went into.
 
