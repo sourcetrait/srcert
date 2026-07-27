@@ -1,10 +1,6 @@
 use crate::*;
 
 /// How a platform ingests a CA certificate.
-///
-/// A fieldful enum because the MODELS differ, not the paths: a Linux
-/// store is a directory you drop a cert into plus a refresh command;
-/// macOS hands it to `security` and has no such directory.
 pub(crate) enum TrustStore {
     TrustDir(TrustDirStore),
     Keychain(KeychainStore),
@@ -31,8 +27,7 @@ impl TrustStore {
         }
     }
 
-    /// The same existence check that stops us writing blindly identifies
-    /// the platform.
+    /// The existence check that guards writing also names the platform.
     fn present(&self) -> bool {
         match self {
             Self::TrustDir(s) => Path::new(s.trust_dir).is_dir(),
@@ -46,8 +41,7 @@ impl TrustStore {
 pub(crate) struct TrustDirStore {
     pub id: &'static str,
     pub trust_dir: &'static str,
-    /// `update-ca-certificates` only processes `.crt`, so the extension
-    /// is per-store.
+    /// Per-store: one refresh command reads only `.crt`, another `.pem`.
     pub cert_extension: &'static str,
     pub update_command: &'static str,
     /// The extracted bundle `verify` reads back.
@@ -115,8 +109,7 @@ pub enum TrustTarget {
     },
 }
 
-/// Where `verify` reads the trusted set from. Carries only what verifying
-/// needs.
+/// Where `verify` reads the trusted set from.
 pub enum TrustSource {
     Bundle(PathBuf),
     Keychain {
@@ -132,11 +125,7 @@ pub(crate) fn kind_of_target(target: &TrustTarget) -> TrustStoreKind {
     }
 }
 
-/// Resolve the install target.
-///
-/// Each command resolves ONLY its own fields. An earlier cut shared one
-/// resolver, so `install --trust-dir` demanded a `--bundle` it does not
-/// expose and could not be run at all on a keychain platform.
+/// Resolve the install target, from arguments over detection.
 pub fn resolve_target(
     trust_dir: Option<&Path>,
     update_command: Option<&str>,
@@ -185,8 +174,7 @@ pub fn resolve_target(
     }
 }
 
-/// Resolve where the trusted set is read from. A `--bundle` on a keychain
-/// platform is an ERROR rather than silently dropped.
+/// Resolve where the trusted set is read from.
 pub fn resolve_source(bundle: Option<&Path>) -> Result<TrustSource> {
     let store = detect();
     if let Some(path) = bundle {

@@ -2,14 +2,7 @@ use crate::*;
 
 use crate::store::{TrustTarget, kind_of_target};
 
-/// Where the secret data home came from, which decides whether we may
-/// create it.
-///
-/// The env default is OUR namespace - a sourcetrait extension nothing
-/// else ships - so nobody else will ever make it and creating it
-/// correctly is our job. An explicitly passed path is the CALLER
-/// asserting a location, and a typo there must fail loudly rather than
-/// conjure a deep tree, exactly as for the trust dir.
+/// Where the secret data home came from; it decides if we may create it.
 pub enum SecretData<'a> {
     FromEnv(&'a Path),
     Explicit(&'a Path),
@@ -28,8 +21,7 @@ pub struct InstallPlan<'a> {
     pub cert_dir: &'a Path,
     pub name: &'a str,
     pub target: &'a TrustTarget,
-    /// The secret DATA home; key material lands in
-    /// `<it>/sourcetrait/<name>/certs`.
+    /// The secret DATA home; keys land in `<it>/sourcetrait/<name>/certs`.
     pub secret_data: SecretData<'a>,
 }
 
@@ -41,13 +33,7 @@ pub struct Installed {
 }
 
 /// Place the key material, then make the system trust the CA.
-///
-/// Runs UNPRIVILEGED, elevating only the few commands that touch the
-/// system trust store. That is what removes the ownership problem rather
-/// than managing it: the key material is created by the invoking user in
-/// the first place, so there is nothing root-owned to hand back.
 pub fn install(plan: &InstallPlan<'_>) -> Result<Installed> {
-    // PREFLIGHT: every check before any mutation.
     let source_dir = crate::generate::certs_dir(plan.cert_dir);
     let files = CertFiles::new(&source_dir, plan.name);
     if !files.exist() {
@@ -57,17 +43,10 @@ pub fn install(plan: &InstallPlan<'_>) -> Result<Installed> {
         });
     }
 
-    // The trust dir must ALREADY EXIST. Creating it would turn a typo
-    // into a silent success - a cert in a directory nothing reads.
     if let TrustTarget::Dir { dir, .. } = plan.target {
         require_existing_dir(dir, "trust dir")?;
     }
 
-    // For an EXPLICIT secret data home the caller is asserting a
-    // location, so its PARENT must already exist - that is what makes a
-    // typo fail instead of conjuring a tree. We then create the dir
-    // itself and our subdirs beneath it. The env default is ours
-    // outright.
     if let SecretData::Explicit(path) = &plan.secret_data {
         let parent = path
             .parent()
@@ -81,11 +60,8 @@ pub fn install(plan: &InstallPlan<'_>) -> Result<Installed> {
             path: secret_dir.display().to_string(),
         });
     }
-    // ACT. Key material first - it is the half we can roll back.
     let created = create_private_chain(&secret_dir)?;
     let mut secrets = Vec::new();
-    // The CA PUBLIC cert rides along so `verify` has the body to look
-    // for, whichever model took the trust.
     for source in [
         &files.authority_private,
         &files.authority_public,
@@ -96,10 +72,6 @@ pub fn install(plan: &InstallPlan<'_>) -> Result<Installed> {
             .file_name()
             .ok_or_else(|| CertError::msg("a cert artifact has no file name"))?;
         let dest = secret_dir.join(name);
-        // Everything inside the secret tree goes go-rwx, public certs
-        // included. They are not secret in themselves, but a 0644 file
-        // sitting beside a CA key is an inconsistency waiting to be
-        // copied by the next person who adds a file here.
         if let Err(e) = copy(source, &dest).and_then(|()| restrict_file(&dest)) {
             rollback(&created);
             return Err(e);
@@ -107,8 +79,6 @@ pub fn install(plan: &InstallPlan<'_>) -> Result<Installed> {
         secrets.push(dest);
     }
 
-    // Roll the key material back if the trust step fails, so a failed
-    // refresh leaves nothing behind and the command can simply be re-run.
     let trusted_at = match trust_ca(plan.target, &files.authority_public, plan.name) {
         Ok(p) => p,
         Err(e) => {
@@ -117,12 +87,6 @@ pub fn install(plan: &InstallPlan<'_>) -> Result<Installed> {
         }
     };
 
-    // Only now that everything has succeeded: staging still holds a copy
-    // of the CA PRIVATE KEY, and leaving it is the kind of duplicate
-    // nobody remembers to clean up. Deliberately last - on any earlier
-    // failure staging survives intact and the command is simply
-    // re-runnable, which move-instead-of-copy would have taken away by
-    // destroying the source before the trust step could fail.
     let staging = consume_staging(&source_dir, &files);
 
     Ok(Installed {
@@ -135,20 +99,11 @@ pub fn install(plan: &InstallPlan<'_>) -> Result<Installed> {
 /// What became of the staging dir.
 pub enum Staging {
     Removed(PathBuf),
-    /// Left in place, with the reason. NOT an error: the install itself
-    /// succeeded, and the caller is told so they can deal with the key
-    /// material still sitting there.
+    /// Left in place, with the reason. The install still succeeded.
     Kept { path: PathBuf, reason: String },
 }
 
-/// Remove the staging dir, but ONLY if it holds exactly the artifacts we
-/// put there.
-///
-/// A blind recursive remove is the deletion mirror of blindly creating a
-/// system path: the dir came from an argument, so anything else living in
-/// it belongs to someone else. We inventory first, delete the known files
-/// by name, and finish with a plain `remove_dir` - so if anything at all
-/// is left, the removal fails instead of recursing into it.
+/// Remove staging, but ONLY if it holds exactly what we put there.
 pub fn consume_staging(dir: &Path, files: &CertFiles) -> Staging {
     let expected: Vec<String> = files
         .all()
@@ -197,16 +152,7 @@ pub fn consume_staging(dir: &Path, files: &CertFiles) -> Staging {
     }
 }
 
-/// Create every missing level down to `target` at 0700.
-///
-/// Walks up to the first ancestor that exists, so this covers the secret
-/// data home ITSELF as well as our subdirs under it - it is our own
-/// non-standard path, so nothing else will have made it.
-///
-/// Each level is created and chmod'd explicitly rather than via a
-/// recursive create, which takes its mode from the umask: under root's
-/// usual 022 every level came out 0755, a world-traversable directory
-/// around a CA key. Returns what we created, newest last, for rollback.
+/// Create every missing level down to `target` at 0700, newest last.
 fn create_private_chain(target: &Path) -> Result<Vec<PathBuf>> {
     use std::os::unix::fs::PermissionsExt;
 
@@ -256,8 +202,7 @@ fn restrict_file(path: &Path) -> Result<()> {
         .map_err(|e| CertError::io(format!("chmod 600 {}", path.display()), e))
 }
 
-/// Remove what we created, deepest first. Best-effort: a rollback failure
-/// must not mask the error that triggered it.
+/// Remove what we created, deepest first, best-effort.
 fn rollback(created: &[PathBuf]) {
     for path in created.iter().rev() {
         let _ = fs::remove_dir_all(path);
@@ -280,8 +225,7 @@ fn require_existing_dir(path: &Path, what: &str) -> Result<()> {
     Ok(())
 }
 
-/// Copy, creating NOTHING. Directories are either ours to make
-/// deliberately or must already exist.
+/// Copy, creating NOTHING; a directory is made deliberately or not here.
 fn copy(from: &Path, to: &Path) -> Result<()> {
     fs::copy(from, to).map_err(|e| {
         CertError::io(format!("copying {} to {}", from.display(), to.display()), e)
@@ -289,12 +233,7 @@ fn copy(from: &Path, to: &Path) -> Result<()> {
     Ok(())
 }
 
-/// The filename we drop into a SHARED system trust dir, vendor-prefixed.
-///
-/// A bare `<name>.pem` there is the same mistake as a bare `certs/` in
-/// the secret data home: the directory belongs to the box, so an
-/// unqualified name both collides and says nothing about who installed
-/// it.
+/// The vendor-prefixed filename we drop into a shared trust directory.
 pub fn trust_file_name(name: &str, extension: &str) -> String {
     format!("{}_{name}.{extension}", profile::SOURCETRAIT)
 }
@@ -312,8 +251,6 @@ fn trust_ca(target: &TrustTarget, authority_public: &Path, name: &str) -> Result
             let src = authority_public.to_string_lossy().into_owned();
             let dst = placed.to_string_lossy().into_owned();
             run_privileged("cp", &[&src, &dst])?;
-            // No arguments of our own: the bare form is correct for both
-            // `update-ca-trust` and `update-ca-certificates`.
             if let Err(e) = run_privileged(update_command, &[]) {
                 let _ = run_privileged("rm", &["-f", &dst]);
                 return Err(e);
@@ -332,23 +269,7 @@ fn trust_ca(target: &TrustTarget, authority_public: &Path, name: &str) -> Result
     }
 }
 
-/// Run a command that needs root, elevating only if we are not already
-/// root.
-///
-/// `install` itself runs UNPRIVILEGED and elevates just these few
-/// commands. Two reasons. Running `sudo srcert` cannot resolve at all,
-/// since sudo's secure path does not include our install home, whereas
-/// `cp`, `update-ca-trust` and `security` are all on it. And running
-/// unprivileged means the key material is created as the invoking user,
-/// so there is no root-created file to hand back and no chown step to get
-/// wrong.
-///
-/// sudo is handed an ARGV, never a shell string: no quoting, no word
-/// splitting, nothing a path with a space or a quote can turn into a
-/// second command.
-///
-/// Stdio is INHERITED rather than captured, or sudo's password prompt
-/// would be swallowed and the call would appear to hang.
+/// Run one command that needs root, elevating only if we are not root.
 fn run_privileged(command: &str, args: &[&str]) -> Result<()> {
     if nix::unistd::Uid::effective().is_root() {
         return run(command, args);

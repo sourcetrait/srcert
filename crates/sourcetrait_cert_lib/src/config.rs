@@ -1,27 +1,14 @@
 use crate::*;
 
 /// The human-authored parameters for `generate`, read from a profile.
-///
-/// It carries NO paths and NO key material, and both omissions are
-/// deliberate. Paths are arguments so that none of them is derived from
-/// the INVOKING IDENTITY: an XDG or `$HOME` lookup under `sudo` resolves
-/// to ROOT's and would quietly write root-owned files into the wrong
-/// place. Passing a path is fine, since sudo resolves what it is given;
-/// it is the identity-derived lookup that is banned. The only secret this
-/// tool handles is the key it mints, which goes exactly where it is told.
-/// That leaves a profile ordinary CONFIG - safe to commit, safe to
-/// hand-edit, nothing to protect.
 #[derive(Debug, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CertGenConfig {
-    /// Filename stem and application segment: `authority_<name>.pem`, and
-    /// the `<secret_data>/sourcetrait/<name>/certs` install destination.
+    /// Filename stem and install segment; also the profile's own name.
     pub name: String,
     /// Organization (O) on both the authority and the leaf.
     pub organization: String,
-    /// Lifetime in days from generation. Set deliberately rather than
-    /// inheriting rcgen's default, which is not a decision we want made
-    /// for us.
+    /// Lifetime in days from generation, set rather than inherited.
     #[serde(default = "default_validity_days")]
     pub validity_days: i64,
     pub authority: AuthorityConfig,
@@ -40,28 +27,14 @@ pub struct AuthorityConfig {
 pub struct EntityConfig {
     /// Common name (CN) of the served leaf certificate.
     pub common_name: String,
-    /// Every name the leaf must answer to. An entry that parses as an IP
-    /// address becomes an iPAddress SAN, anything else a dNSName.
-    ///
-    /// This is the list that decides whether `wss://localhost:<port>`
-    /// verifies: hostname verification reads SANs, not the CN, so an
-    /// IP-only list fails a `localhost` URL even though the socket is the
-    /// same. Ports are NOT in certificates, so one leaf covers every
-    /// local port.
+    /// Every name the leaf answers to; an IP becomes an iPAddress name.
     pub subject_alt_names: Vec<String>,
-    /// What the leaf may be presented AS. Defaults to server alone, which
-    /// is what a profile written before this field existed meant.
+    /// What the leaf may be presented as. Absent means server alone.
     #[serde(default = "default_usages")]
     pub usages: Vec<EntityUsage>,
 }
 
 /// An extended key usage a leaf carries.
-///
-/// A leaf without `Client` cannot be presented as a client certificate,
-/// so a mutual-TLS deployment that reuses a server-only leaf fails at
-/// handshake with an error that names neither the profile nor this field.
-/// Declaring it is what makes that a configuration decision rather than a
-/// discovery.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum EntityUsage {
@@ -95,8 +68,7 @@ impl CertGenConfig {
         Self::parse(&text, path)
     }
 
-    /// Split out from `load` so the schema is testable without a
-    /// filesystem, and so a profile can be validated before it is written.
+    /// Parse and validate profile text without touching a filesystem.
     pub fn parse(text: &str, path: &Path) -> Result<Self> {
         let config: Self = toml::from_str(text).map_err(|source| CertError::ConfigParse {
             path: path.display().to_string(),
@@ -124,8 +96,7 @@ impl CertGenConfig {
         Ok(())
     }
 
-    /// The extended key usages the leaf carries, deduplicated in the
-    /// order the profile declared them.
+    /// The leaf's usages, deduplicated in the order they were declared.
     pub(crate) fn extended_key_usages(&self) -> Vec<rcgen::ExtendedKeyUsagePurpose> {
         let mut seen: Vec<EntityUsage> = Vec::new();
         for usage in &self.entity.usages {
@@ -136,10 +107,7 @@ impl CertGenConfig {
         seen.iter().map(EntityUsage::purpose).collect()
     }
 
-    /// Parse each SAN into its rcgen form. An entry that parses as an IP
-    /// address is an iPAddress SAN; everything else is a dNSName, which
-    /// rcgen requires to be IA5 (ASCII) - a non-ASCII name is rejected
-    /// here rather than deeper in rcgen.
+    /// Parse each alternative name into its certificate-library form.
     pub(crate) fn subject_alt_names(&self) -> Result<Vec<rcgen::SanType>> {
         self.entity
             .subject_alt_names

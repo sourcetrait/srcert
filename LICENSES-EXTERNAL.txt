@@ -1,0 +1,9 @@
+(MIT OR Apache-2.0) AND Unicode-3.0 (1): unicode-ident
+Apache-2.0 AND ISC (1): ring
+Apache-2.0 OR MIT (6): autocfg, bit-vec, equivalent, indexmap, utf8parse, zeroize
+Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT (1): wasi
+ISC (1): untrusted
+MIT (8): cfg_aliases, data-encoding, nix, nom, pem, strsim, synstructure, winnow
+MIT OR Apache-2.0 (67): anstream, anstyle, anstyle-parse, anstyle-query, anstyle-wincon, asn1-rs, asn1-rs-derive, base64, bitflags, cc, cfg-if, clap, clap_builder, clap_derive, clap_lex, colorchoice, der-parser, deranged, displaydoc, find-msvc-tools, getrandom, hashbrown, heck, is_terminal_polyfill, lazy_static, libc, num-bigint, num-conv, num-integer, num-traits, oid-registry, once_cell_polyfill, powerfmt, proc-macro2, quote, rcgen, rustls-pki-types, serde, serde_core, serde_derive, serde_spanned, shlex, snafu, snafu-derive, syn, thiserror, thiserror-impl, time, time-core, time-macros, toml, toml_datetime, toml_edit, toml_write, windows-link, windows-sys, windows-targets, windows_aarch64_gnullvm, windows_aarch64_msvc, windows_i686_gnu, windows_i686_gnullvm, windows_i686_msvc, windows_x86_64_gnu, windows_x86_64_gnullvm, windows_x86_64_msvc, x509-parser, yasna
+MIT/Apache-2.0 (3): asn1-rs-impl, minimal-lexical, rusticata-macros
+Unlicense OR MIT (1): memchr

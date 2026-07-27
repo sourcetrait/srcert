@@ -2,15 +2,10 @@ use std::path::{Path, PathBuf};
 
 use sourcetrait_cert_lib as lib_cert;
 
-/// Default for `--secret-data`. sudo's env reset strips it, so an
-/// elevated run needs `sudo -E` or the explicit flag.
+/// Default for `--secret-data`; sudo's environment reset strips it.
 const SECRET_DATA_ENV: &str = "XDGX_SECRET_DATA_HOME";
 
 /// Every command names the profile it acts against, first.
-///
-/// There is no built-in fallback profile, and that is the point of the
-/// tool: what a certificate says is a per-application decision, so a run
-/// that did not name one would be minting something nobody chose.
 #[derive(clap::Parser)]
 #[command(
     name = "srcert",
@@ -18,8 +13,7 @@ const SECRET_DATA_ENV: &str = "XDGX_SECRET_DATA_HOME";
     about = "Local TLS certificate authority, driven by named profiles"
 )]
 struct Cli {
-    /// The profile to act against, as installed under
-    /// `$XDG_CONFIG_HOME/sourcetrait/srcert/profiles`.
+    /// The profile to act against, by name, as installed.
     profile: String,
     /// Override the configuration home the profile is read from.
     #[arg(long, global = true)]
@@ -32,16 +26,14 @@ struct Cli {
 enum Command {
     /// Mint a local CA and the leaf it signs. Unprivileged.
     Generate {
-        /// Directory to write into; the artifacts land in its `certs`
-        /// subdir, which must not already exist.
+        /// Where to write; artifacts land in a `certs` subdirectory.
         dir: PathBuf,
     },
     /// Place the key material and make the system trust the CA.
     Install {
         /// The dir passed to `generate`.
         dir: PathBuf,
-        /// The secret DATA home; key material lands in its
-        /// `sourcetrait/<name>/certs` subdir.
+        /// The secret DATA home; keys land in `sourcetrait/<name>/certs`.
         #[arg(long)]
         secret_data: Option<PathBuf>,
         /// Override the detected trust store with a directory-model dir.
@@ -117,8 +109,7 @@ pub fn run() -> lib_cert::Result<()> {
     }
 }
 
-/// The path plus where it came from: an explicit flag must already exist,
-/// the env default is ours to create.
+/// The path plus where it came from; the library treats them differently.
 fn resolve_secret_data(explicit: Option<PathBuf>) -> lib_cert::Result<(PathBuf, bool)> {
     if let Some(path) = explicit {
         return Ok((path, false));

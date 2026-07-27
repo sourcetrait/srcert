@@ -1,11 +1,6 @@
 use crate::*;
 
 /// The four artifacts a generate run emits, all into ONE directory.
-///
-/// `generate` knows nothing about destinations on purpose - `install`
-/// owns every placement decision, so there is exactly one place to look
-/// when asking where a file ends up rather than the logic being smeared
-/// across both halves.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum CertFileKind {
     AuthorityPrivate,
@@ -25,27 +20,12 @@ impl CertFileKind {
     }
 }
 
-/// Every path argument this tool takes names a PARENT; we own the `certs`
-/// leaf under it. So a caller passes the location it wants involved and
-/// never has to know our filenames, and the same dir can be handed to
-/// `generate`, `install` and `verify` without any of them meaning
-/// something subtly different by it.
-///
-/// The one place this does NOT apply is the system trust dir, which has
-/// its own contract with `update-ca-trust` - a `certs` subdir there would
-/// simply not be picked up. That path is used exactly as given.
+/// The `certs` leaf we own under any directory a caller names.
 pub fn certs_dir(dir: &Path) -> PathBuf {
     dir.join("certs")
 }
 
-/// The install destination inside a SHARED root:
-/// `<secret_data>/sourcetrait/<name>/certs`.
-///
-/// The vendor and application segments are not decoration. The secret
-/// data home belongs to the box, not to us, so dropping a bare `certs`
-/// dir at its root would collide with every other application that ever
-/// wants one. The application segment is the profile's own `name`, which
-/// is what keeps two profiles from installing over each other.
+/// The install destination: `<secret_data>/sourcetrait/<name>/certs`.
 pub fn secret_certs_dir(secret_data: &Path, name: &str) -> PathBuf {
     secret_data
         .join(profile::SOURCETRAIT)
@@ -86,15 +66,7 @@ impl CertFiles {
         ]
     }
 
-    /// Takes the four PEM strings rather than the live rcgen values.
-    ///
-    /// The reference implementation needed a self-referencing struct
-    /// here, because the certified issuer borrows the keypair and the
-    /// writer wanted both afterwards. Generation, signing and writing all
-    /// happen in one scope, so taking the already-serialized PEMs removes
-    /// the self-reference - and with it a proc-macro dependency, which
-    /// matters for a binary whose whole justification is a small blast
-    /// radius.
+    /// Takes the four serialized PEMs rather than the live values.
     fn write(
         &self,
         authority_key_pem: &str,
@@ -117,9 +89,7 @@ impl CertFiles {
     }
 }
 
-/// Private keys go 0600. The staging dir is already 0700, but a key that
-/// is readable the moment someone widens the directory is a latent
-/// mistake worth closing here.
+/// Private keys go 0600, beneath the staging directory's own 0700.
 fn restrict(path: &Path) -> Result<()> {
     use std::os::unix::fs::PermissionsExt;
     let mut perms = fs::metadata(path)
@@ -131,14 +101,6 @@ fn restrict(path: &Path) -> Result<()> {
 }
 
 /// Mint a self-signed CA and a leaf it signs, into `<dir>/certs`.
-///
-/// An EXISTING `certs` dir is a hard error, not a no-op. The reference
-/// guarded on "all four artifacts present" and skipped, which is the
-/// dangerous shape: a partially populated dir would regenerate over live
-/// material, and a fully populated one would silently do nothing while
-/// the caller believed it had fresh certs. Refusing makes the operator
-/// decide, and neither a stale authority nor a rotated-out-from-under-you
-/// anchor can happen by accident.
 pub fn generate(config: &CertGenConfig, dir: &Path) -> Result<CertFiles> {
     let out_dir = certs_dir(dir);
     if out_dir.exists() {
@@ -178,8 +140,6 @@ pub fn generate(config: &CertGenConfig, dir: &Path) -> Result<CertFiles> {
 
     let mut entity_params = rcgen::CertificateParams::default();
     entity_params.is_ca = rcgen::IsCa::NoCa;
-    // Without this the chain does not build for some verifiers; easy to
-    // omit and tedious to diagnose, so it is kept deliberately.
     entity_params.use_authority_key_identifier_extension = true;
     entity_params
         .key_usages
@@ -210,16 +170,13 @@ pub fn generate(config: &CertGenConfig, dir: &Path) -> Result<CertFiles> {
     Ok(files)
 }
 
-/// ECDSA P-256 for both keys. It is the conservative pick for client
-/// compatibility, where ed25519 would have been a gamble against whatever
-/// TLS stack the peer happens to ship.
+/// The not-before and not-after pair, measured from now.
 fn validity_window(days: i64) -> (time::OffsetDateTime, time::OffsetDateTime) {
     let now = time::OffsetDateTime::now_utc();
     (now, now + time::Duration::days(days))
 }
 
-/// The staging dir holds CA PRIVATE KEY material, so it is created 0700
-/// explicitly rather than inheriting whatever umask the caller had.
+/// Created 0700 explicitly; it holds CA private key material.
 fn create_staging_dir(dir: &Path) -> Result<()> {
     use std::os::unix::fs::PermissionsExt;
     if !dir.exists() {

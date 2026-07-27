@@ -1,13 +1,6 @@
 pub type Result<T> = std::result::Result<T, CertError>;
 
 /// Failures generating, installing or verifying a local CA and its leaf.
-///
-/// Every variant that wraps an underlying failure KEEPS its source rather
-/// than flattening it to a message. Certificate work is exactly where the
-/// cause matters: "generation failed" is useless next to the rcgen error
-/// that says which parameter was rejected, and an install that cannot
-/// read a key needs to distinguish a missing file from a permission
-/// denial.
 #[derive(Debug, snafu::Snafu)]
 pub enum CertError {
     #[snafu(display("{context}: {source}"))]

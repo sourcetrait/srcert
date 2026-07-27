@@ -3,13 +3,11 @@ use crate::*;
 use crate::store::TrustSource;
 
 pub struct VerifyPlan<'a> {
-    /// The secret DATA home whose `sourcetrait/<name>/certs` leaf holds
-    /// the material.
+    /// The secret DATA home holding `sourcetrait/<name>/certs`.
     pub secret_data: &'a Path,
     pub name: &'a str,
     pub source: &'a TrustSource,
-    /// The CA cert to look for. Defaults to the installed copy, but can
-    /// be given so a manually-placed CA still verifies.
+    /// The CA cert to look for; defaults to the installed copy.
     pub ca_cert: Option<&'a Path>,
 }
 
@@ -19,19 +17,10 @@ pub struct Verified {
     pub ca_trusted: bool,
 }
 
-/// Did the CA actually become trusted, and can the unprivileged user read
-/// the keys it needs at runtime?
-///
-/// The key check READS rather than stats: `install` elevates individual
-/// commands and a stat succeeds regardless of ownership, so a stat would
-/// pass on a root-owned key the host cannot open. Run this AS THE
-/// INVOKING USER, never under sudo, or it proves nothing.
+/// Is the CA trusted, and can the INVOKING user read both private keys?
 pub fn verify(plan: &VerifyPlan<'_>) -> Result<Verified> {
     let secret_dir = crate::generate::secret_certs_dir(plan.secret_data, plan.name);
 
-    // BOTH private keys. The server serves TLS with the ENTITY key, so
-    // checking only the authority key would pass while the key actually
-    // used at runtime was unreadable.
     let mut keys_read = Vec::new();
     for key_name in [
         format!("authority_{}.key.pem", plan.name),
@@ -65,9 +54,7 @@ pub fn verify(plan: &VerifyPlan<'_>) -> Result<Verified> {
     })
 }
 
-/// Every trusted certificate as PEM text, plus a label for where it came
-/// from. The two models differ only in HOW the text is obtained, so the
-/// comparison stays shared.
+/// Every trusted certificate as PEM text, plus where it came from.
 fn read_trusted_set(source: &TrustSource) -> Result<(String, String)> {
     match source {
         TrustSource::Bundle(path) => {
@@ -96,10 +83,7 @@ fn read_trusted_set(source: &TrustSource) -> Result<(String, String)> {
     }
 }
 
-/// Compared on the base64 body with all whitespace stripped: the store's
-/// copy is regenerated rather than byte-copied, so wrapping and
-/// commentary differ and a literal PEM substring test would report a
-/// false negative on a good install.
+/// Compared on the base64 body, with all whitespace stripped.
 pub fn contains_cert(trusted_set: &str, cert_pem: &str) -> bool {
     let body = pem_body(cert_pem);
     if body.is_empty() {
