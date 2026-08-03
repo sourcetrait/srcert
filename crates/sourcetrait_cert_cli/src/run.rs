@@ -31,6 +31,15 @@ enum Command {
         /// Where to write; artifacts land in a `certs` subdirectory.
         dir: PathBuf,
     },
+    /// Mint an entity under an existing authority. Unprivileged.
+    GenerateEntity {
+        /// The profile to act against, by name, as installed.
+        profile: String,
+        /// The dir holding the existing authority (its `certs` subdir).
+        authority_dir: PathBuf,
+        /// Where to write the entity; lands in a `certs` subdirectory.
+        out_dir: PathBuf,
+    },
     /// Place the key material and make the system trust the CA.
     Install {
         /// The profile to act against, by name, as installed.
@@ -113,6 +122,12 @@ pub fn run() -> Result<(), Failed> {
         }
         Command::Generate { profile, dir } => cmd_generate(&config_home, &profile, &dir)
             .map_err(failing("generate the certificates")),
+        Command::GenerateEntity {
+            profile,
+            authority_dir,
+            out_dir,
+        } => cmd_generate_entity(&config_home, &profile, &authority_dir, &out_dir)
+            .map_err(failing("generate the entity")),
         Command::Install {
             profile,
             dir,
@@ -193,6 +208,19 @@ fn cmd_generate(config_home: &Path, profile: &str, dir: &Path) -> lib_cert::Resu
     let files = lib_cert::generate(&config, dir)?;
     let items: Vec<String> = files.all().iter().map(|p| style::pretty_path(p)).collect();
     style::report(style::Kind::Done, "Generated:", &items);
+    Ok(())
+}
+
+fn cmd_generate_entity(
+    config_home: &Path,
+    profile: &str,
+    authority_dir: &Path,
+    out_dir: &Path,
+) -> lib_cert::Result<()> {
+    let config = lib_cert::load_profile(config_home, profile)?;
+    let files = lib_cert::generate_entity(&config, authority_dir, out_dir)?;
+    let items: Vec<String> = files.all().iter().map(|p| style::pretty_path(p)).collect();
+    style::report(style::Kind::Done, "Generated entity:", &items);
     Ok(())
 }
 

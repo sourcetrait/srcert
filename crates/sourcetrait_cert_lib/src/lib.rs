@@ -17,7 +17,14 @@ pub(crate) use crate::config::CertGenConfig;
 
 pub use crate::config::{AuthorityConfig, EntityConfig, EntityUsage};
 pub use crate::error::{CertError, Result};
-pub use crate::generate::{CertFiles, certs_dir, generate, secret_certs_dir};
+pub use crate::generate::{
+    CertFiles,
+    EntityFiles,
+    certs_dir,
+    generate,
+    generate_entity,
+    secret_certs_dir,
+};
 pub use crate::install::{
     InstallPlan,
     Installed,
@@ -44,6 +51,7 @@ pub use crate::verify::{VerifyPlan, Verified, verify};
 #[cfg(test)]
 mod tests {
     mod config;
+    mod generate;
     mod install;
     mod profile;
 }

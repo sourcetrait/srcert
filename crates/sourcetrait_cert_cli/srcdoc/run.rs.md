@@ -18,6 +18,16 @@ subcommand has to remember its own `profile` positional, where the old
 shape made it structurally impossible to forget. Nothing enforces it, so
 it is a convention the next variant has to follow.
 
+## enum Command: GenerateEntity
+
+`generate-entity` is the second generate verb: a leaf minted under an
+EXISTING authority, for the one-CA-many-hosts model. It takes two path
+positionals where `generate` takes one - the authority dir to read the CA
+from, and the output dir for the new leaf - because a leaf carries the
+fixed `entity_<name>` filename, so a second one lands in its own dir
+rather than over the first. Unprivileged, like `generate`, and it keeps
+its own `profile` positional per the convention above.
+
 ## struct Failed
 
 Carries the ATTEMPT beside the cause, so a reported line reads

@@ -76,3 +76,43 @@ rather than this function. The note is above; this computes a window.
 Created 0700 EXPLICITLY rather than inheriting the caller's umask,
 because the directory holds CA private key material for the moments
 between minting and installing.
+
+## fn leaf_params
+
+Extracted from `generate` so `generate` and `generate_entity` build the
+leaf identically. The profile is the single source of what a leaf carries
+(CN, SANs, usage EKUs, validity), so the two mint paths cannot drift on
+it. The authority-key-identifier extension is set here, so a leaf from
+either path carries its AKI.
+
+## struct EntityFiles
+
+The entity-only counterpart to `CertFiles`: two paths, not four. A host
+joining a shared authority holds its own leaf and the peers' public
+leaves it pins - never the CA private key, which stays with the authority
+holder. So `generate_entity` writes only `entity_<name>.{,key.}pem`, and
+this names them. `write` restricts the private key 0600 exactly as
+`CertFiles::write` does.
+
+## fn generate_entity
+
+Mints a leaf under an EXISTING authority, for the one-CA-many-hosts
+model: all internal endpoints chain to one authority and each is pinned
+by its specific leaf (entity-pin), so a shared CA plus per-host leaves is
+the shape. `generate` mints CA+leaf in one shot and cannot add a second
+leaf; this reads the CA back and signs.
+
+The CA loads straight from PEM: `KeyPair::from_pem` for the key, then
+`rcgen::Issuer::from_ca_cert_pem(cert_pem, ca_key)` builds the issuer by
+x509-parsing the cert - no `CertificateParams` rebuild. That needs
+rcgen's non-default `x509-parser` feature (enabled on the workspace dep).
+`from_ca_cert_pem` re-derives the issuer DN, key usages, and key-id method
+(the CA's own SKI, as PreSpecified) from the loaded cert, which is why the
+leaf's `use_authority_key_identifier_extension` in `leaf_params` yields a
+correct AKI. The returned `Issuer<'static, _>` owns everything, so no
+borrow/self-reference concern (unlike the reference impl's ouroboros).
+
+Refuses a missing authority (`UnrecognizedCertSources`) and an existing
+output certs dir (`CertsDirExists`, as `generate` does). Output is the two
+`EntityFiles`; the CA public is not copied - a host bundle is minted per
+host and the CA public distributed separately for the trust install.

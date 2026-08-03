@@ -31,6 +31,11 @@ reachable only at `generate::CertFiles` would have meant either a second
 path-naming site in every consumer, or a face that says whether the
 material exists but not where it is.
 
+`EntityFiles` and `generate_entity` extend the face for the shared-
+authority case: a host joining an existing CA mints its own leaf alone
+(`generate` mints CA+leaf; `generate_entity` adds a leaf), and
+`EntityFiles` names the two files it wrote - the entity-only `CertFiles`.
+
 `CertGenConfig` is reachable at `config::CertGenConfig` rather than
 through this block. That is not an oversight and not quite a decision:
 the type is the profile schema, so a consumer that wants to validate

@@ -9,7 +9,7 @@ members = [
 anstyle = "1"
 clap = { version = "4", features = ["derive"] }
 nix = { version = "0.31", features = ["fs", "process", "signal", "user"] }
-rcgen = { version = "0.14" }
+rcgen = { version = "0.14", features = ["x509-parser"] }
 serde = { version = "1", features = ["derive"] }
 snafu = "0.8"
 sourcetrait_cert_lib = { path = "crates/sourcetrait_cert_lib" }
