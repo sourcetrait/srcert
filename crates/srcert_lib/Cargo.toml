@@ -1,6 +1,6 @@
 [package]
 name = "srcert_lib"
-version = "0.0.0-6"
+version = "0.0.0-7"
 edition = "2024"
 description = "Local TLS certificate authority tooling, driven by named profiles"
 authors = ["SourceTrait <development@sourcetrait.com>"]

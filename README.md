@@ -8,7 +8,7 @@ SourceTrait Cert
 Overview
 --------------------------------------------------------------------------------
 
-`srcert` mints a local certificate authority and one leaf signed by it,
+`srcert` mints a local certificate authority and the leaves it signs,
 installs the key material, and makes the system trust the authority. It exists
 so that a service on a single machine can be given a real TLS identity without
 a public authority and without hand-run OpenSSL recipes.
@@ -17,10 +17,19 @@ Every command names a PROFILE, and there is no built-in fallback:
 
 ```
 srcert show <profile>
-srcert generate <profile> <dir>
+srcert generate all <profile> <dir>
+srcert generate authority <profile> <dir>
+srcert generate entity <profile> <authority_dir> <out_dir>
 srcert install <profile> <dir>
 srcert verify <profile>
 ```
+
+`generate all` mints an authority and the leaf it signs, the directory
+`install` takes; `generate authority` mints the authority alone, and
+`generate entity` a leaf under an existing one. Each also takes its files by
+name in place of its dirs: `--authority-cert` and `--authority-key`, and
+`--entity-cert` and `--entity-key` where an entity is minted, so an authority
+kept under names of its own signs new entities beside it.
 
 What a certificate says is a per-application decision, so an unnamed run would
 be minting something nobody chose. Profiles live at
@@ -76,8 +85,9 @@ while letting an application own knowing what its own profile should say.
 Operation
 --------------------------------------------------------------------------------
 
-`generate` is unprivileged and refuses an existing `certs` directory rather
-than regenerating over live material.
+`generate` is unprivileged. Its dir form refuses an existing `certs`
+directory, and its file form an existing file, rather than regenerating over
+live material; a private key is created readable by its owner alone.
 
 `install` runs UNPRIVILEGED and elevates only the individual standard commands
 that touch the system trust store. Do not run the whole tool under `sudo`: its

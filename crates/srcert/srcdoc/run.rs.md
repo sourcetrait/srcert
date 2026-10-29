@@ -18,15 +18,43 @@ subcommand has to remember its own `profile` positional, where the old
 shape made it structurally impossible to forget. Nothing enforces it, so
 it is a convention the next variant has to follow.
 
-## enum Command: GenerateEntity
+A verb with more than one thing to act on nests nouns under it:
+`srcert generate entity <profile>`, the verb, then the noun, then the
+profile.
 
-`generate-entity` is the second generate verb: a leaf minted under an
-EXISTING authority, for the one-CA-many-hosts model. It takes two path
-positionals where `generate` takes one - the authority dir to read the CA
+## enum Generate
+
+`generate` takes what it mints as a noun: `all`, an authority and the leaf
+it signs in one shot, the directory `install` reads; `authority`, the CA
+alone; and `entity`, a leaf under an EXISTING authority, for the
+one-CA-many-hosts model. A new kind of material is a new noun under the
+one verb rather than a hyphenated verb of its own (the_user), and each
+noun keeps its own `profile` positional per the convention above.
+
+Each noun takes its files in one of two forms. The dir form names parents,
+`certs` leaves under them holding srcert's own file names. The file form
+names the files themselves, `--authority-cert` and `--authority-key`, and
+`--entity-cert` and `--entity-key` where an entity is minted, for material
+kept under names of its own (the_user). The forms are exclusive and a file
+form is named whole: a part of one, or both forms at once, is refused
+before anything is read.
+
+`entity`'s dir form takes two dirs - the authority dir to read the CA
 from, and the output dir for the new leaf - because a leaf carries the
 fixed `entity_<name>` filename, so a second one lands in its own dir
-rather than over the first. Unprivileged, like `generate`, and it keeps
-its own `profile` positional per the convention above.
+rather than over the first.
+
+## fn named_authority / fn named_files
+
+`None` is the dir form and `Some` the file form, so each command matches
+the two forms against its dirs in one place. `named_files` refuses a part
+of the authority's pair with the four flags' message, naming the whole it
+belongs to.
+
+## fn generate
+
+One dispatch for the nouns, so each still names its own attempt in a
+failure's line, as every verb does through `failing`.
 
 ## struct Failed
 

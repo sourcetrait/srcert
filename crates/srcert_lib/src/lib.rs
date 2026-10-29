@@ -18,11 +18,16 @@ pub(crate) use crate::config::CertGenConfig;
 pub use crate::config::{AuthorityConfig, EntityConfig, EntityUsage};
 pub use crate::error::{CertError, Result};
 pub use crate::generate::{
+    AuthorityFiles,
     CertFiles,
     EntityFiles,
     certs_dir,
     generate,
+    generate_authority,
+    generate_authority_files,
     generate_entity,
+    generate_entity_files,
+    generate_files,
     secret_certs_dir,
 };
 pub use crate::install::{

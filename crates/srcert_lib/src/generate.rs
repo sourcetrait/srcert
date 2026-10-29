@@ -75,30 +75,26 @@ impl CertFiles {
         entity_key_pem: &str,
         entity_cert_pem: &str,
     ) -> Result<()> {
-        for (path, contents) in [
-            (&self.authority_private, authority_key_pem),
-            (&self.authority_public, authority_cert_pem),
-            (&self.entity_private, entity_key_pem),
-            (&self.entity_public, entity_cert_pem),
-        ] {
-            fs::write(path, contents)
-                .map_err(|e| CertError::io(format!("writing {}", path.display()), e))?;
-        }
-        restrict(&self.authority_private)?;
-        restrict(&self.entity_private)?;
-        Ok(())
+        write_new(&self.authority_private, authority_key_pem, true)?;
+        write_new(&self.authority_public, authority_cert_pem, false)?;
+        write_new(&self.entity_private, entity_key_pem, true)?;
+        write_new(&self.entity_public, entity_cert_pem, false)
     }
 }
 
-/// Private keys go 0600, beneath the staging directory's own 0700.
-fn restrict(path: &Path) -> Result<()> {
-    use std::os::unix::fs::PermissionsExt;
-    let mut perms = fs::metadata(path)
-        .map_err(|e| CertError::io(format!("stat {}", path.display()), e))?
-        .permissions();
-    perms.set_mode(0o600);
-    fs::set_permissions(path, perms)
-        .map_err(|e| CertError::io(format!("chmod 600 {}", path.display()), e))
+/// Write a file that must not exist yet; a private key is 0600 from its creation.
+fn write_new(path: &Path, contents: &str, private: bool) -> Result<()> {
+    use std::io::Write;
+    use std::os::unix::fs::OpenOptionsExt;
+    let mut options = fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    if private {
+        options.mode(0o600);
+    }
+    options
+        .open(path)
+        .and_then(|mut file| file.write_all(contents.as_bytes()))
+        .map_err(|e| CertError::io(format!("writing {}", path.display()), e))
 }
 
 /// Mint a self-signed CA and a leaf it signs, into `<dir>/certs`.
@@ -113,28 +109,74 @@ pub fn generate(config: &CertGenConfig, dir: &Path) -> Result<CertFiles> {
 
     create_staging_dir(&out_dir)?;
 
+    let [authority_key, authority_cert, entity_key, entity_cert] = mint(config)?;
+    files.write(&authority_key, &authority_cert, &entity_key, &entity_cert)?;
+    Ok(files)
+}
+
+/// Mint a self-signed CA and a leaf it signs, into the four files named.
+pub fn generate_files(config: &CertGenConfig, files: CertFiles) -> Result<CertFiles> {
+    check_outputs(&files.all())?;
+    let [authority_key, authority_cert, entity_key, entity_cert] = mint(config)?;
+    make_parents(&files.all())?;
+    files.write(&authority_key, &authority_cert, &entity_key, &entity_cert)?;
+    Ok(files)
+}
+
+/// Mint a self-signed CA alone, into `<dir>/certs`.
+pub fn generate_authority(config: &CertGenConfig, dir: &Path) -> Result<AuthorityFiles> {
+    let out_dir = certs_dir(dir);
+    if out_dir.exists() {
+        return Err(CertError::CertsDirExists {
+            path: out_dir.display().to_string(),
+        });
+    }
+    let files = AuthorityFiles::new(&out_dir, &config.name);
+
+    create_staging_dir(&out_dir)?;
+
+    let [authority_key, authority_cert] = mint_authority(config)?;
+    files.write(&authority_key, &authority_cert)?;
+    Ok(files)
+}
+
+/// Mint a self-signed CA alone, into the two files named.
+pub fn generate_authority_files(
+    config: &CertGenConfig,
+    files: AuthorityFiles,
+) -> Result<AuthorityFiles> {
+    check_outputs(&files.all())?;
+    let [authority_key, authority_cert] = mint_authority(config)?;
+    make_parents(&files.all())?;
+    files.write(&authority_key, &authority_cert)?;
+    Ok(files)
+}
+
+/// A fresh self-signed CA as PEMs: its key, then its cert.
+fn mint_authority(config: &CertGenConfig) -> Result<[String; 2]> {
+    let (not_before, not_after) = validity_window(config.validity_days);
+    let authority_keypair = rcgen::KeyPair::generate_for(&rcgen::PKCS_ECDSA_P256_SHA256)
+        .map_err(|e| CertError::rcgen("generating the authority keypair", e))?;
+    let issuer = rcgen::CertifiedIssuer::self_signed(
+        authority_params(config, not_before, not_after),
+        &authority_keypair,
+    )
+    .map_err(|e| CertError::rcgen("self-signing the authority certificate", e))?;
+    Ok([authority_keypair.serialize_pem(), issuer.pem()])
+}
+
+/// A fresh CA and its leaf as PEMs: CA key, CA cert, leaf key, leaf cert.
+fn mint(config: &CertGenConfig) -> Result<[String; 4]> {
     let (not_before, not_after) = validity_window(config.validity_days);
 
     let authority_keypair = rcgen::KeyPair::generate_for(&rcgen::PKCS_ECDSA_P256_SHA256)
         .map_err(|e| CertError::rcgen("generating the authority keypair", e))?;
 
-    let mut authority_params = rcgen::CertificateParams::default();
-    authority_params.is_ca = rcgen::IsCa::Ca(rcgen::BasicConstraints::Unconstrained);
-    authority_params.key_usages.extend([
-        rcgen::KeyUsagePurpose::DigitalSignature,
-        rcgen::KeyUsagePurpose::KeyCertSign,
-    ]);
-    authority_params
-        .distinguished_name
-        .push(rcgen::DnType::CommonName, config.authority.common_name.as_str());
-    authority_params
-        .distinguished_name
-        .push(rcgen::DnType::OrganizationName, config.organization.as_str());
-    authority_params.not_before = not_before;
-    authority_params.not_after = not_after;
-
-    let issuer = rcgen::CertifiedIssuer::self_signed(authority_params, &authority_keypair)
-        .map_err(|e| CertError::rcgen("self-signing the authority certificate", e))?;
+    let issuer = rcgen::CertifiedIssuer::self_signed(
+        authority_params(config, not_before, not_after),
+        &authority_keypair,
+    )
+    .map_err(|e| CertError::rcgen("self-signing the authority certificate", e))?;
 
     let entity_keypair = rcgen::KeyPair::generate_for(&rcgen::PKCS_ECDSA_P256_SHA256)
         .map_err(|e| CertError::rcgen("generating the entity keypair", e))?;
@@ -145,13 +187,12 @@ pub fn generate(config: &CertGenConfig, dir: &Path) -> Result<CertFiles> {
         .signed_by(&entity_keypair, &issuer)
         .map_err(|e| CertError::rcgen("signing the entity certificate", e))?;
 
-    files.write(
-        &authority_keypair.serialize_pem(),
-        &issuer.pem(),
-        &entity_keypair.serialize_pem(),
-        &entity_cert.pem(),
-    )?;
-    Ok(files)
+    Ok([
+        authority_keypair.serialize_pem(),
+        issuer.pem(),
+        entity_keypair.serialize_pem(),
+        entity_cert.pem(),
+    ])
 }
 
 /// The not-before and not-after pair, measured from now.
@@ -173,6 +214,57 @@ fn create_staging_dir(dir: &Path) -> Result<()> {
     perms.set_mode(0o700);
     fs::set_permissions(dir, perms)
         .map_err(|e| CertError::io(format!("chmod 700 {}", dir.display()), e))
+}
+
+/// Refuse an output that already exists, or one file named twice.
+fn check_outputs(paths: &[&PathBuf]) -> Result<()> {
+    for (index, path) in paths.iter().enumerate() {
+        if path.exists() {
+            return Err(CertError::FileExists {
+                path: path.display().to_string(),
+            });
+        }
+        if paths[..index].contains(path) {
+            return Err(CertError::msg(format!("{} is named twice", path.display())));
+        }
+    }
+    Ok(())
+}
+
+/// Make each output's missing parent 0700; an existing one is left as it is.
+fn make_parents(paths: &[&PathBuf]) -> Result<()> {
+    for path in paths {
+        if let Some(parent) = path.parent()
+            && !parent.as_os_str().is_empty()
+            && !parent.exists()
+        {
+            create_staging_dir(parent)?;
+        }
+    }
+    Ok(())
+}
+
+/// The authority's certificate params from a profile.
+fn authority_params(
+    config: &CertGenConfig,
+    not_before: time::OffsetDateTime,
+    not_after: time::OffsetDateTime,
+) -> rcgen::CertificateParams {
+    let mut params = rcgen::CertificateParams::default();
+    params.is_ca = rcgen::IsCa::Ca(rcgen::BasicConstraints::Unconstrained);
+    params.key_usages.extend([
+        rcgen::KeyUsagePurpose::DigitalSignature,
+        rcgen::KeyUsagePurpose::KeyCertSign,
+    ]);
+    params
+        .distinguished_name
+        .push(rcgen::DnType::CommonName, config.authority.common_name.as_str());
+    params
+        .distinguished_name
+        .push(rcgen::DnType::OrganizationName, config.organization.as_str());
+    params.not_before = not_before;
+    params.not_after = not_after;
+    params
 }
 
 /// The leaf's certificate params from a profile.
@@ -202,6 +294,36 @@ fn leaf_params(
     Ok(params)
 }
 
+/// The authority an entity is minted under: its key and its certificate.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AuthorityFiles {
+    pub authority_private: PathBuf,
+    pub authority_public: PathBuf,
+}
+
+impl AuthorityFiles {
+    pub fn new(certs_dir: &Path, cert_name: &str) -> Self {
+        Self {
+            authority_private: CertFileKind::AuthorityPrivate.filepath(certs_dir, cert_name),
+            authority_public: CertFileKind::AuthorityPublic.filepath(certs_dir, cert_name),
+        }
+    }
+
+    pub fn exist(&self) -> bool {
+        self.authority_private.exists() && self.authority_public.exists()
+    }
+
+    pub fn all(&self) -> [&PathBuf; 2] {
+        [&self.authority_private, &self.authority_public]
+    }
+
+    /// Takes the two serialized PEMs, mirroring `CertFiles::write`.
+    fn write(&self, authority_key_pem: &str, authority_cert_pem: &str) -> Result<()> {
+        write_new(&self.authority_private, authority_key_pem, true)?;
+        write_new(&self.authority_public, authority_cert_pem, false)
+    }
+}
+
 /// The two artifacts a `generate_entity` run emits, into ONE directory.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EntityFiles {
@@ -227,12 +349,8 @@ impl EntityFiles {
 
     /// Takes the two serialized PEMs, mirroring `CertFiles::write`.
     fn write(&self, entity_key_pem: &str, entity_cert_pem: &str) -> Result<()> {
-        fs::write(&self.entity_private, entity_key_pem)
-            .map_err(|e| CertError::io(format!("writing {}", self.entity_private.display()), e))?;
-        fs::write(&self.entity_public, entity_cert_pem)
-            .map_err(|e| CertError::io(format!("writing {}", self.entity_public.display()), e))?;
-        restrict(&self.entity_private)?;
-        Ok(())
+        write_new(&self.entity_private, entity_key_pem, true)?;
+        write_new(&self.entity_public, entity_cert_pem, false)
     }
 }
 
@@ -243,8 +361,8 @@ pub fn generate_entity(
     out_dir: &Path,
 ) -> Result<EntityFiles> {
     let auth_certs = certs_dir(authority_dir);
-    let auth = CertFiles::new(&auth_certs, &config.name);
-    if !auth.authority_private.exists() || !auth.authority_public.exists() {
+    let authority = AuthorityFiles::new(&auth_certs, &config.name);
+    if !authority.exist() {
         return Err(CertError::UnrecognizedCertSources {
             path: auth_certs.display().to_string(),
             name: config.name.clone(),
@@ -259,10 +377,41 @@ pub fn generate_entity(
     }
     let files = EntityFiles::new(&out_certs, &config.name);
 
-    let ca_key_pem = fs::read_to_string(&auth.authority_private)
-        .map_err(|e| CertError::io(format!("reading {}", auth.authority_private.display()), e))?;
-    let ca_cert_pem = fs::read_to_string(&auth.authority_public)
-        .map_err(|e| CertError::io(format!("reading {}", auth.authority_public.display()), e))?;
+    let [entity_key, entity_cert] = mint_entity(config, &authority)?;
+    create_staging_dir(&out_certs)?;
+    files.write(&entity_key, &entity_cert)?;
+    Ok(files)
+}
+
+/// Mint a fresh entity under the authority named, into the two files named.
+pub fn generate_entity_files(
+    config: &CertGenConfig,
+    authority: &AuthorityFiles,
+    files: EntityFiles,
+) -> Result<EntityFiles> {
+    for path in [&authority.authority_private, &authority.authority_public] {
+        if !path.is_file() {
+            return Err(CertError::MissingFile {
+                what: String::from("the authority's"),
+                path: path.display().to_string(),
+            });
+        }
+    }
+    check_outputs(&files.all())?;
+    let [entity_key, entity_cert] = mint_entity(config, authority)?;
+    make_parents(&files.all())?;
+    files.write(&entity_key, &entity_cert)?;
+    Ok(files)
+}
+
+/// A fresh leaf signed by the authority read from `authority`: its key, its cert.
+fn mint_entity(config: &CertGenConfig, authority: &AuthorityFiles) -> Result<[String; 2]> {
+    let ca_key_pem = fs::read_to_string(&authority.authority_private).map_err(|e| {
+        CertError::io(format!("reading {}", authority.authority_private.display()), e)
+    })?;
+    let ca_cert_pem = fs::read_to_string(&authority.authority_public).map_err(|e| {
+        CertError::io(format!("reading {}", authority.authority_public.display()), e)
+    })?;
     let ca_key = rcgen::KeyPair::from_pem(&ca_key_pem)
         .map_err(|e| CertError::rcgen("loading the authority key", e))?;
     let issuer = rcgen::Issuer::from_ca_cert_pem(&ca_cert_pem, ca_key)
@@ -275,8 +424,5 @@ pub fn generate_entity(
     let entity_cert = entity_params
         .signed_by(&entity_keypair, &issuer)
         .map_err(|e| CertError::rcgen("signing the entity certificate", e))?;
-
-    create_staging_dir(&out_certs)?;
-    files.write(&entity_keypair.serialize_pem(), &entity_cert.pem())?;
-    Ok(files)
+    Ok([entity_keypair.serialize_pem(), entity_cert.pem()])
 }

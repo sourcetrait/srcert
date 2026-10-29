@@ -45,8 +45,14 @@ pub enum CertError {
     #[snafu(display("{path} already exists"))]
     CertsDirExists { path: String },
 
+    #[snafu(display("{path} already exists"))]
+    FileExists { path: String },
+
     #[snafu(display("{what} {path} does not exist"))]
     MissingDir { what: String, path: String },
+
+    #[snafu(display("{what} {path} does not exist"))]
+    MissingFile { what: String, path: String },
 
     #[snafu(display("{what} {path} is not a directory"))]
     NotADir { what: String, path: String },

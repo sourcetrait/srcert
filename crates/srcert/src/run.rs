@@ -11,31 +11,20 @@ use crate::style;
     version,
     about = "Local TLS certificate authority, driven by named profiles"
 )]
-struct Cli {
+pub(crate) struct Cli {
     /// Override the configuration home the profile is read from.
     #[arg(long, global = true)]
     config_home: Option<PathBuf>,
     #[command(subcommand)]
-    command: Command,
+    pub(crate) command: Command,
 }
 
 #[derive(clap::Subcommand)]
-enum Command {
-    /// Mint a local CA and the leaf it signs. Unprivileged.
+pub(crate) enum Command {
+    /// Mint an authority, an entity under one, or both. Unprivileged.
     Generate {
-        /// The profile to act against, by name, as installed.
-        profile: String,
-        /// Where to write; artifacts land in a `certs` subdirectory.
-        dir: PathBuf,
-    },
-    /// Mint an entity under an existing authority. Unprivileged.
-    GenerateEntity {
-        /// The profile to act against, by name, as installed.
-        profile: String,
-        /// The dir holding the existing authority (its `certs` subdir).
-        authority_dir: PathBuf,
-        /// Where to write the entity; lands in a `certs` subdirectory.
-        out_dir: PathBuf,
+        #[command(subcommand)]
+        what: Generate,
     },
     /// Place the key material and make the system trust the CA.
     Install {
@@ -71,6 +60,119 @@ enum Command {
         /// The profile to act against, by name, as installed.
         profile: String,
     },
+}
+
+/// What `generate` mints, each in a dir form or with its files by name.
+#[derive(clap::Subcommand)]
+pub(crate) enum Generate {
+    /// Mint a local CA and the leaf it signs. Unprivileged.
+    All {
+        /// The profile to act against, by name, as installed.
+        profile: String,
+        /// Where to write; artifacts land in a `certs` subdirectory.
+        dir: Option<PathBuf>,
+        #[command(flatten)]
+        files: FileFlags,
+    },
+    /// Mint a local CA alone. Unprivileged.
+    Authority {
+        /// The profile to act against, by name, as installed.
+        profile: String,
+        /// Where to write; the authority lands in a `certs` subdirectory.
+        dir: Option<PathBuf>,
+        #[command(flatten)]
+        files: AuthorityFlags,
+    },
+    /// Mint an entity under an existing authority. Unprivileged.
+    Entity {
+        /// The profile to act against, by name, as installed.
+        profile: String,
+        /// The dir holding the existing authority (its `certs` subdir).
+        authority_dir: Option<PathBuf>,
+        /// Where to write the entity; lands in a `certs` subdirectory.
+        out_dir: Option<PathBuf>,
+        #[command(flatten)]
+        files: FileFlags,
+    },
+}
+
+/// The authority's two files by name, in place of a dir.
+#[derive(clap::Args, Debug, Default)]
+pub(crate) struct AuthorityFlags {
+    /// The authority's certificate, by name.
+    #[arg(long)]
+    pub authority_cert: Option<PathBuf>,
+    /// The authority's private key, by name.
+    #[arg(long)]
+    pub authority_key: Option<PathBuf>,
+}
+
+/// The authority's and the entity's four files by name, in place of the dirs.
+#[derive(clap::Args, Debug, Default)]
+pub(crate) struct FileFlags {
+    #[command(flatten)]
+    pub authority: AuthorityFlags,
+    /// The entity's certificate, by name.
+    #[arg(long)]
+    pub entity_cert: Option<PathBuf>,
+    /// The entity's private key, by name.
+    #[arg(long)]
+    pub entity_key: Option<PathBuf>,
+}
+
+/// The file form's flags for an authority alone.
+const AUTHORITY_FLAGS: &str = "--authority-cert and --authority-key";
+
+/// The file form's flags for an authority and an entity.
+const FOUR_FLAGS: &str = "--authority-cert, --authority-key, --entity-cert, and --entity-key";
+
+/// The authority's two files named, neither named, or one alone refused.
+pub(crate) fn named_authority(
+    flags: AuthorityFlags,
+) -> lib_cert::Result<Option<lib_cert::AuthorityFiles>> {
+    match (flags.authority_cert, flags.authority_key) {
+        (None, None) => Ok(None),
+        (Some(authority_public), Some(authority_private)) => Ok(Some(lib_cert::AuthorityFiles {
+            authority_private,
+            authority_public,
+        })),
+        _ => Err(part_refusal(AUTHORITY_FLAGS)),
+    }
+}
+
+/// The four files named whole, none named, or a part refused.
+pub(crate) fn named_files(flags: FileFlags) -> lib_cert::Result<Option<lib_cert::CertFiles>> {
+    let authority = named_authority(flags.authority).map_err(|_| part_refusal(FOUR_FLAGS))?;
+    match (authority, flags.entity_cert, flags.entity_key) {
+        (None, None, None) => Ok(None),
+        (Some(authority), Some(entity_public), Some(entity_private)) => {
+            Ok(Some(lib_cert::CertFiles {
+                authority_private: authority.authority_private,
+                authority_public: authority.authority_public,
+                entity_private,
+                entity_public,
+            }))
+        }
+        _ => Err(part_refusal(FOUR_FLAGS)),
+    }
+}
+
+/// A part of the file form refused; `flags` names the whole of it.
+fn part_refusal(flags: &str) -> lib_cert::CertError {
+    lib_cert::CertError::Msg {
+        message: format!("name all of {flags}, or none"),
+    }
+}
+
+/// The dir form beside the file form, or neither, refused; `flags` names the file form.
+fn form_refusal(dirs: bool, flags: &str) -> lib_cert::CertError {
+    lib_cert::CertError::Msg {
+        message: if dirs {
+            format!("give the dirs or {flags}, not both")
+        } else {
+            format!("give the dirs, or {flags}")
+        },
+    }
 }
 
 /// A failure plus what was being attempted, for the reported line.
@@ -118,14 +220,7 @@ pub fn run() -> Result<(), Failed> {
         Command::Show { profile } => {
             cmd_show(&config_home, &profile).map_err(failing("read the profile"))
         }
-        Command::Generate { profile, dir } => cmd_generate(&config_home, &profile, &dir)
-            .map_err(failing("generate the certificates")),
-        Command::GenerateEntity {
-            profile,
-            authority_dir,
-            out_dir,
-        } => cmd_generate_entity(&config_home, &profile, &authority_dir, &out_dir)
-            .map_err(failing("generate the entity")),
+        Command::Generate { what } => generate(&config_home, what),
         Command::Install {
             profile,
             dir,
@@ -154,6 +249,37 @@ pub fn run() -> Result<(), Failed> {
             bundle.as_deref(),
         )
         .map_err(failing("verify the installation")),
+    }
+}
+
+/// The generate verbs, each naming its attempt.
+fn generate(config_home: &Path, what: Generate) -> Result<(), Failed> {
+    match what {
+        Generate::All {
+            profile,
+            dir,
+            files,
+        } => cmd_generate(config_home, &profile, dir.as_deref(), files)
+            .map_err(failing("generate the certificates")),
+        Generate::Authority {
+            profile,
+            dir,
+            files,
+        } => cmd_generate_authority(config_home, &profile, dir.as_deref(), files)
+            .map_err(failing("generate the authority")),
+        Generate::Entity {
+            profile,
+            authority_dir,
+            out_dir,
+            files,
+        } => cmd_generate_entity(
+            config_home,
+            &profile,
+            authority_dir.as_deref(),
+            out_dir.as_deref(),
+            files,
+        )
+        .map_err(failing("generate the entity")),
     }
 }
 
@@ -209,22 +335,75 @@ fn cmd_show(config_home: &Path, profile: &str) -> lib_cert::Result<()> {
     Ok(())
 }
 
-fn cmd_generate(config_home: &Path, profile: &str, dir: &Path) -> lib_cert::Result<()> {
+fn cmd_generate(
+    config_home: &Path,
+    profile: &str,
+    dir: Option<&Path>,
+    flags: FileFlags,
+) -> lib_cert::Result<()> {
     let config = lib_cert::load_profile(config_home, profile)?;
-    let files = lib_cert::generate(&config, dir)?;
+    let files = match (dir, named_files(flags)?) {
+        (Some(dir), None) => lib_cert::generate(&config, dir)?,
+        (None, Some(files)) => lib_cert::generate_files(&config, files)?,
+        (dir, _) => return Err(form_refusal(dir.is_some(), FOUR_FLAGS)),
+    };
     let items: Vec<String> = files.all().iter().map(|p| style::pretty_path(p)).collect();
     style::report(style::Kind::Done, "Generated:", &items);
+    Ok(())
+}
+
+fn cmd_generate_authority(
+    config_home: &Path,
+    profile: &str,
+    dir: Option<&Path>,
+    flags: AuthorityFlags,
+) -> lib_cert::Result<()> {
+    let config = lib_cert::load_profile(config_home, profile)?;
+    let files = match (dir, named_authority(flags)?) {
+        (Some(dir), None) => lib_cert::generate_authority(&config, dir)?,
+        (None, Some(files)) => lib_cert::generate_authority_files(&config, files)?,
+        (dir, _) => return Err(form_refusal(dir.is_some(), AUTHORITY_FLAGS)),
+    };
+    let items: Vec<String> = files.all().iter().map(|p| style::pretty_path(p)).collect();
+    style::report(style::Kind::Done, "Generated authority:", &items);
     Ok(())
 }
 
 fn cmd_generate_entity(
     config_home: &Path,
     profile: &str,
-    authority_dir: &Path,
-    out_dir: &Path,
+    authority_dir: Option<&Path>,
+    out_dir: Option<&Path>,
+    flags: FileFlags,
 ) -> lib_cert::Result<()> {
     let config = lib_cert::load_profile(config_home, profile)?;
-    let files = lib_cert::generate_entity(&config, authority_dir, out_dir)?;
+    let files = match (authority_dir, out_dir, named_files(flags)?) {
+        (Some(authority_dir), Some(out_dir), None) => {
+            lib_cert::generate_entity(&config, authority_dir, out_dir)?
+        }
+        (None, None, Some(files)) => {
+            let authority = lib_cert::AuthorityFiles {
+                authority_private: files.authority_private,
+                authority_public: files.authority_public,
+            };
+            let entity = lib_cert::EntityFiles {
+                entity_private: files.entity_private,
+                entity_public: files.entity_public,
+            };
+            lib_cert::generate_entity_files(&config, &authority, entity)?
+        }
+        (Some(_), None, None) => {
+            return Err(lib_cert::CertError::Msg {
+                message: String::from("give the out dir beside the authority dir"),
+            });
+        }
+        (authority_dir, out_dir, _) => {
+            return Err(form_refusal(
+                authority_dir.is_some() || out_dir.is_some(),
+                FOUR_FLAGS,
+            ));
+        }
+    };
     let items: Vec<String> = files.all().iter().map(|p| style::pretty_path(p)).collect();
     style::report(style::Kind::Done, "Generated entity:", &items);
     Ok(())
