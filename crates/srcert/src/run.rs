@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use sourcetrait_cert_lib as lib_cert;
+use srcert_lib as lib_cert;
 
 use crate::style;
 

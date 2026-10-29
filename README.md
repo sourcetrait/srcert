@@ -58,7 +58,7 @@ is the operator's.
 Crates
 --------------------------------------------------------------------------------
 
-### [Library](./crates/sourcetrait_cert_lib)
+### [Library](./crates/srcert_lib)
 
 *Generation, installation, verification, and profile management*
 
@@ -68,7 +68,7 @@ through `install_profile`, tells its user to run `srcert` against that name,
 and shuts down. That keeps certificate generation an explicit operator act
 while letting an application own knowing what its own profile should say.
 
-### [Command line](./crates/sourcetrait_cert_cli)
+### [Command line](./crates/srcert)
 
 *`srcert`, the command line over the library*
 
