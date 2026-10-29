@@ -2,27 +2,13 @@ use crate::*;
 
 use crate::store::{TrustTarget, kind_of_target};
 
-/// Where the secret data home came from; it decides if we may create it.
-pub enum SecretData<'a> {
-    FromEnv(&'a Path),
-    Explicit(&'a Path),
-}
-
-impl<'a> SecretData<'a> {
-    pub fn path(&self) -> &'a Path {
-        match self {
-            Self::FromEnv(p) | Self::Explicit(p) => p,
-        }
-    }
-}
-
 pub struct InstallPlan<'a> {
     /// The dir `generate` was given; its artifacts are in `<dir>/certs`.
     pub cert_dir: &'a Path,
     pub name: &'a str,
     pub target: &'a TrustTarget,
     /// The secret DATA home; keys land in `<it>/sourcetrait/<name>/certs`.
-    pub secret_data: SecretData<'a>,
+    pub secret_data: &'a Path,
 }
 
 pub struct Installed {
@@ -47,14 +33,13 @@ pub fn preflight(plan: &InstallPlan<'_>) -> Result<()> {
         require_existing_dir(dir, "trust dir")?;
     }
 
-    if let SecretData::Explicit(path) = &plan.secret_data {
-        let parent = path
-            .parent()
-            .ok_or_else(|| CertError::msg("--secret-data has no parent directory"))?;
-        require_existing_dir(parent, "secret data parent")?;
-    }
+    let parent = plan
+        .secret_data
+        .parent()
+        .ok_or_else(|| CertError::msg("the secret data home has no parent directory"))?;
+    require_existing_dir(parent, "secret data parent")?;
 
-    let secret_dir = crate::generate::secret_certs_dir(plan.secret_data.path(), plan.name);
+    let secret_dir = crate::generate::secret_certs_dir(plan.secret_data, plan.name);
     if secret_dir.exists() {
         return Err(CertError::CertsDirExists {
             path: secret_dir.display().to_string(),
@@ -75,7 +60,7 @@ pub fn install(plan: &InstallPlan<'_>) -> Result<Installed> {
 
     let source_dir = crate::generate::certs_dir(plan.cert_dir);
     let files = CertFiles::new(&source_dir, plan.name);
-    let secret_dir = crate::generate::secret_certs_dir(plan.secret_data.path(), plan.name);
+    let secret_dir = crate::generate::secret_certs_dir(plan.secret_data, plan.name);
 
     let created = create_private_chain(&secret_dir)?;
     let mut secrets = Vec::new();

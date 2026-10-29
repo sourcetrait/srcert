@@ -51,21 +51,12 @@ Matching one variant does not generalise, and that is fine: the default
 arm covers everything, and a second bespoke case is another arm rather
 than a mechanism.
 
-## const SECRET_DATA_ENV
-
-sudo's environment reset strips it, so an elevated run needs the
-preserving flag or the explicit argument. That is a note about how this
-tool is MISUSED rather than how it is used: `install` runs unprivileged
-and elevates individual commands, so the variable is read by the
-invoking user's process and the reset never happens on the sanctioned
-path.
-
 ## fn resolve_secret_data
 
-Returns the path AND where it came from, because the library treats the
-two differently: an explicit argument must already have a parent, while
-the environment default is our own namespace and ours to create. Losing
-that distinction here would turn a typo into a conjured tree.
+`--secret-data` for one run, else the profile's `secret_data`, else a
+refusal naming the profile to edit. There is no environment default: the
+profile is the one place srcert and every consumer of the material read,
+so a location set anywhere else is one they could disagree on.
 
 ## fn cmd_install
 

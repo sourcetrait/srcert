@@ -28,7 +28,6 @@ pub use crate::generate::{
 pub use crate::install::{
     InstallPlan,
     Installed,
-    SecretData,
     Staging,
     check_exists,
     install,

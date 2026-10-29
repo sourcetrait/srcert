@@ -69,3 +69,27 @@ fn a_profile_must_carry_at_least_one_san() {
     let text = BASE.replace(r#"["127.0.0.1", "localhost"]"#, "[]");
     assert!(parse(&text).is_err());
 }
+
+#[test]
+fn a_profile_without_secret_data_names_none() {
+    assert!(parse(BASE).expect("parses").secret_data.is_none());
+}
+
+#[test]
+fn a_profile_may_name_its_secret_data_home() {
+    let text = format!("secret_data = \"/srv/secret\"\n{BASE}");
+    let config = parse(&text).expect("parses");
+    assert_eq!(
+        config.secret_data,
+        Some(std::path::PathBuf::from("/srv/secret"))
+    );
+}
+
+/// A home lookup is identity-derived, so the profile names the path whole.
+#[test]
+fn a_secret_data_that_is_not_absolute_is_refused() {
+    for raw in ["secret", "~/secret", ""] {
+        let text = format!("secret_data = \"{raw}\"\n{BASE}");
+        assert!(parse(&text).is_err(), "{raw:?} must be refused");
+    }
+}

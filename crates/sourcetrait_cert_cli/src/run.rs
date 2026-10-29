@@ -4,9 +4,6 @@ use sourcetrait_cert_lib as lib_cert;
 
 use crate::style;
 
-/// Default for `--secret-data`; sudo's environment reset strips it.
-const SECRET_DATA_ENV: &str = "XDGX_SECRET_DATA_HOME";
-
 /// Every command names the profile it acts against.
 #[derive(clap::Parser)]
 #[command(
@@ -46,7 +43,7 @@ enum Command {
         profile: String,
         /// The dir passed to `generate`.
         dir: PathBuf,
-        /// The secret DATA home; keys land in `sourcetrait/<name>/certs`.
+        /// Overrides the profile's `secret_data`, the secret DATA home.
         #[arg(long)]
         secret_data: Option<PathBuf>,
         /// Override the detected trust store with a directory-model dir.
@@ -60,6 +57,7 @@ enum Command {
     Verify {
         /// The profile to act against, by name, as installed.
         profile: String,
+        /// Overrides the profile's `secret_data`, the secret DATA home.
         #[arg(long)]
         secret_data: Option<PathBuf>,
         /// The CA cert to look for. Defaults to the installed copy.
@@ -159,17 +157,18 @@ pub fn run() -> Result<(), Failed> {
     }
 }
 
-/// The path plus where it came from; the library treats them differently.
-fn resolve_secret_data(explicit: Option<PathBuf>) -> lib_cert::Result<(PathBuf, bool)> {
-    if let Some(path) = explicit {
-        return Ok((path, false));
-    }
-    match std::env::var(SECRET_DATA_ENV) {
-        Ok(v) if !v.is_empty() => Ok((PathBuf::from(v), true)),
-        _ => Err(lib_cert::CertError::Msg {
-            message: format!("pass --secret-data or set ${SECRET_DATA_ENV}"),
-        }),
-    }
+/// `--secret-data`, else the profile's own; a run naming neither is refused.
+pub(crate) fn resolve_secret_data(
+    explicit: Option<PathBuf>,
+    profiled: Option<PathBuf>,
+    profile_path: &Path,
+) -> lib_cert::Result<PathBuf> {
+    explicit.or(profiled).ok_or_else(|| lib_cert::CertError::Msg {
+        message: format!(
+            "pass --secret-data or set `secret_data` in {}",
+            profile_path.display()
+        ),
+    })
 }
 
 fn cmd_show(config_home: &Path, profile: &str) -> lib_cert::Result<()> {
@@ -191,6 +190,13 @@ fn cmd_show(config_home: &Path, profile: &str) -> lib_cert::Result<()> {
             format!("name: {}", config.name),
             format!("organization: {}", config.organization),
             format!("validity_days: {}", config.validity_days),
+            format!(
+                "secret_data: {}",
+                config
+                    .secret_data
+                    .as_deref()
+                    .map_or_else(|| String::from("unset"), |p| p.display().to_string())
+            ),
             format!("authority: {}", config.authority.common_name),
             format!("entity: {}", config.entity.common_name),
             format!(
@@ -232,20 +238,16 @@ fn cmd_install(
     trust_dir: Option<&Path>,
     update_command: Option<&str>,
 ) -> lib_cert::Result<()> {
+    let path = lib_cert::profile_path(config_home, profile)?;
     let config = lib_cert::load_profile(config_home, profile)?;
-    let (secret_home, from_env) = resolve_secret_data(secret_data)?;
+    let secret_home = resolve_secret_data(secret_data, config.secret_data.clone(), &path)?;
     let (target, detected) = lib_cert::resolve_target(trust_dir, update_command)?;
 
-    let secret = if from_env {
-        lib_cert::SecretData::FromEnv(&secret_home)
-    } else {
-        lib_cert::SecretData::Explicit(&secret_home)
-    };
     let plan = lib_cert::InstallPlan {
         cert_dir: dir,
         name: &config.name,
         target: &target,
-        secret_data: secret,
+        secret_data: &secret_home,
     };
 
     lib_cert::preflight(&plan)?;
@@ -293,8 +295,9 @@ fn cmd_verify(
     ca_cert: Option<&Path>,
     bundle: Option<&Path>,
 ) -> lib_cert::Result<()> {
+    let path = lib_cert::profile_path(config_home, profile)?;
     let config = lib_cert::load_profile(config_home, profile)?;
-    let (secret_home, _) = resolve_secret_data(secret_data)?;
+    let secret_home = resolve_secret_data(secret_data, config.secret_data.clone(), &path)?;
     let source = lib_cert::resolve_source(bundle)?;
     let verified = lib_cert::verify(&lib_cert::VerifyPlan {
         secret_data: &secret_home,

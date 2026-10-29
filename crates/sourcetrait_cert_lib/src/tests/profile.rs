@@ -1,5 +1,9 @@
 //! Profile locks: where a profile lands, and what a name may not do.
+use std::ffi::OsString;
+use std::path::PathBuf;
+
 use crate::profile::{
+    config_home_from,
     default_profile_path,
     install_profile,
     installed_profiles,
@@ -113,6 +117,50 @@ fn a_name_cannot_climb_out_or_be_cleaned() {
     }
     assert!(validate_snake("quest").is_ok());
     assert!(validate_snake("grammar_two").is_ok());
+}
+
+/// A stand-in environment holding exactly `pairs`.
+fn lookup<'a>(pairs: &'a [(&'a str, &'a str)]) -> impl Fn(&str) -> Option<OsString> + 'a {
+    move |name| {
+        pairs
+            .iter()
+            .find(|(key, _)| *key == name)
+            .map(|(_, value)| OsString::from(value))
+    }
+}
+
+#[test]
+fn the_configuration_home_reads_uenv_before_xdg() {
+    let both = [
+        ("UENV_USR_CONFIG", "/uenv/config"),
+        ("XDG_CONFIG_HOME", "/xdg/config"),
+    ];
+    assert_eq!(
+        config_home_from(lookup(&both)).unwrap(),
+        PathBuf::from("/uenv/config")
+    );
+    let xdg = [("XDG_CONFIG_HOME", "/xdg/config")];
+    assert_eq!(
+        config_home_from(lookup(&xdg)).unwrap(),
+        PathBuf::from("/xdg/config")
+    );
+}
+
+#[test]
+fn an_empty_variable_reads_as_unset() {
+    let empty = [("UENV_USR_CONFIG", ""), ("XDG_CONFIG_HOME", "/xdg/config")];
+    assert_eq!(
+        config_home_from(lookup(&empty)).unwrap(),
+        PathBuf::from("/xdg/config")
+    );
+}
+
+#[test]
+fn no_configuration_home_is_refused_naming_both_variables() {
+    let error = config_home_from(lookup(&[])).expect_err("neither is set");
+    let text = error.to_string();
+    assert!(text.contains("UENV_USR_CONFIG"), "{text}");
+    assert!(text.contains("XDG_CONFIG_HOME"), "{text}");
 }
 
 #[test]

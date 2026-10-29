@@ -24,8 +24,9 @@ srcert verify <profile>
 
 What a certificate says is a per-application decision, so an unnamed run would
 be minting something nobody chose. Profiles live at
-`$XDG_CONFIG_HOME/sourcetrait/srcert/profiles/<name>.toml`, with a reference
-copy under `default/profiles/` that the tool never reads.
+`<config>/sourcetrait/srcert/profiles/<name>.toml`, the configuration home
+`$UENV_USR_CONFIG` or else `$XDG_CONFIG_HOME`, with a reference copy under
+`default/profiles/` that the tool never reads.
 
 A profile declares what the leaf may be presented AS. A leaf carrying both
 usages can sit at either end of a mutual-TLS handshake:
@@ -46,6 +47,12 @@ usages = ["server", "client"]
 
 Omitting `usages` means server authentication alone, which is what a profile
 written before the field existed meant.
+
+An installed profile names `secret_data`, the absolute directory the key
+material lives under, at `<secret_data>/sourcetrait/<name>/certs`: `install`
+places it there and `verify` reads it there, and `--secret-data` overrides it
+for one run. A profile an application ships leaves it unset, since the location
+is the operator's.
 
 
 Crates

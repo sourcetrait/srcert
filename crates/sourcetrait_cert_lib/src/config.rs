@@ -11,6 +11,9 @@ pub struct CertGenConfig {
     /// Lifetime in days from generation, set rather than inherited.
     #[serde(default = "default_validity_days")]
     pub validity_days: i64,
+    /// The secret DATA home, absolute; keys land in `sourcetrait/<name>/certs`.
+    #[serde(default)]
+    pub secret_data: Option<PathBuf>,
     pub authority: AuthorityConfig,
     pub entity: EntityConfig,
 }
@@ -92,6 +95,14 @@ impl CertGenConfig {
         }
         if self.validity_days <= 0 {
             return Err(CertError::msg("`validity_days` must be positive"));
+        }
+        if let Some(path) = &self.secret_data
+            && !path.is_absolute()
+        {
+            return Err(CertError::msg(format!(
+                "`secret_data` must be an absolute path: {}",
+                path.display()
+            )));
         }
         Ok(())
     }

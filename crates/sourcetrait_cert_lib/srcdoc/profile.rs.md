@@ -9,11 +9,22 @@ copy is refreshed rather than protected.
 
 ## fn config_home
 
+`$UENV_USR_CONFIG` first, then `$XDG_CONFIG_HOME`, an empty value read as
+unset, and nothing guessed past them: the XDG default would come from
+`$HOME`, a lookup the configuration home does not need to make once
+either variable names it.
+
 Unlike every path this tool takes as an argument, an environment lookup
 is identity-derived. It is safe HERE only because `srcert` is never run
 elevated: it runs unprivileged and elevates the few standard commands
 that touch the trust store, so the lookup always resolves to the invoking
 user. A caller that might itself be elevated passes a path instead.
+
+## fn config_home_from
+
+The lookup behind `config_home` with the environment passed in, so the
+order is tested without mutating the process environment every other test
+reads.
 
 ## struct ProfileInstall
 

@@ -11,7 +11,8 @@ pub const DEFAULT: &str = "default";
 /// The extension a profile file carries.
 pub const PROFILE_EXTENSION: &str = "toml";
 
-const CONFIG_HOME_ENV: &str = "XDG_CONFIG_HOME";
+/// The variables a configuration home is read from, the first set one winning.
+const CONFIG_HOME_ENVS: [&str; 2] = ["UENV_USR_CONFIG", "XDG_CONFIG_HOME"];
 
 /// Where the profiles this tool READS live.
 pub fn profiles_dir(config_home: &Path) -> PathBuf {
@@ -32,12 +33,23 @@ pub fn default_profiles_dir(config_home: &Path) -> PathBuf {
 
 /// The configuration home from the environment; never call it elevated.
 pub fn config_home() -> Result<PathBuf> {
-    match std::env::var(CONFIG_HOME_ENV) {
-        Ok(value) if !value.is_empty() => Ok(PathBuf::from(value)),
-        _ => Err(CertError::msg(format!(
-            "set ${CONFIG_HOME_ENV} or pass a configuration home"
-        ))),
-    }
+    config_home_from(|name| std::env::var_os(name))
+}
+
+/// The first configuration home `lookup` holds, an empty value read as unset.
+pub(crate) fn config_home_from(
+    lookup: impl Fn(&str) -> Option<std::ffi::OsString>,
+) -> Result<PathBuf> {
+    CONFIG_HOME_ENVS
+        .iter()
+        .find_map(|name| lookup(name).filter(|value| !value.is_empty()))
+        .map(PathBuf::from)
+        .ok_or_else(|| {
+            CertError::msg(format!(
+                "set ${} or ${}, or pass a configuration home",
+                CONFIG_HOME_ENVS[0], CONFIG_HOME_ENVS[1]
+            ))
+        })
 }
 
 /// The file one named profile is read from.

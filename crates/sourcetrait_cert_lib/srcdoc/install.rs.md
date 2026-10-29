@@ -1,16 +1,13 @@
 # install.rs
 
-## enum SecretData
+## struct InstallPlan
 
-Where the secret data home came from decides whether we may CREATE it,
-and that is the whole reason the origin is carried rather than just the
-path.
+### secret_data
 
-The environment default is OUR namespace - a sourcetrait extension
-nothing else ships - so nobody else will ever make it and creating it
-correctly is our job. An explicitly passed path is the CALLER asserting a
-location, and a typo there must fail loudly rather than conjure a deep
-tree, exactly as for the trust directory.
+A plain path, whoever named it. The flag and the profile are both an
+operator asserting a location, so its parent must already exist and a
+typo there fails loudly rather than conjuring a deep tree, exactly as for
+the trust directory.
 
 ## fn preflight
 
@@ -101,9 +98,9 @@ there.
 ## fn create_private_chain
 
 Walks up to the first ancestor that exists, so this covers the secret
-data home ITSELF as well as our subdirectories under it. That is right
-because it is our own non-standard path and nothing else will have made
-it - which is exactly the distinction `SecretData` carries.
+data home ITSELF as well as our subdirectories under it. Preflight has
+already required the home's parent, so the walk never makes more than the
+home and our own segments below it.
 
 Each level is created and chmod'd EXPLICITLY rather than through a
 recursive create, which takes its mode from the umask: under root's usual
