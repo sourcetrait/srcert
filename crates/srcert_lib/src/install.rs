@@ -156,8 +156,6 @@ pub fn consume_staging(dir: &Path, files: &CertFiles) -> Staging {
 
 /// Create every missing level down to `target` at 0700, newest last.
 fn create_private_chain(target: &Path) -> Result<Vec<PathBuf>> {
-    use std::os::unix::fs::PermissionsExt;
-
     let mut missing = Vec::new();
     let mut cursor = Some(target);
     while let Some(path) = cursor {
@@ -177,15 +175,7 @@ fn create_private_chain(target: &Path) -> Result<Vec<PathBuf>> {
         }
         created.push(path.clone());
 
-        let mut perms = match fs::metadata(&path) {
-            Ok(m) => m.permissions(),
-            Err(e) => {
-                rollback(&created);
-                return Err(CertError::io(format!("stat {}", path.display()), e));
-            }
-        };
-        perms.set_mode(0o700);
-        if let Err(e) = fs::set_permissions(&path, perms) {
+        if let Err(e) = crate::generate::set_private_mode(&path, 0o700) {
             rollback(&created);
             return Err(CertError::io(format!("chmod 700 {}", path.display()), e));
         }
@@ -195,13 +185,20 @@ fn create_private_chain(target: &Path) -> Result<Vec<PathBuf>> {
 
 /// go-rwx on a file we placed in the secret tree.
 fn restrict_file(path: &Path) -> Result<()> {
-    use std::os::unix::fs::PermissionsExt;
-    let mut perms = fs::metadata(path)
-        .map_err(|e| CertError::io(format!("stat {}", path.display()), e))?
-        .permissions();
-    perms.set_mode(0o600);
-    fs::set_permissions(path, perms)
+    crate::generate::set_private_mode(path, 0o600)
         .map_err(|e| CertError::io(format!("chmod 600 {}", path.display()), e))
+}
+
+/// Whether this process runs as root; Windows has none.
+#[cfg(unix)]
+fn is_root() -> bool {
+    nix::unistd::Uid::effective().is_root()
+}
+
+/// Whether this process runs as root; Windows has none.
+#[cfg(not(unix))]
+fn is_root() -> bool {
+    false
 }
 
 /// Remove what we created, deepest first, best-effort.
@@ -273,7 +270,7 @@ fn trust_ca(target: &TrustTarget, authority_public: &Path, name: &str) -> Result
 
 /// Run one command that needs root, elevating only if we are not root.
 fn run_privileged(command: &str, args: &[&str]) -> Result<()> {
-    if nix::unistd::Uid::effective().is_root() {
+    if is_root() {
         return run(command, args);
     }
     let mut argv = vec![command];

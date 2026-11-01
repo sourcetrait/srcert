@@ -82,14 +82,13 @@ impl CertFiles {
     }
 }
 
-/// Write a file that must not exist yet; a private key is 0600 from its creation.
+/// Write a file that must not exist yet; a private key is private from its creation.
 fn write_new(path: &Path, contents: &str, private: bool) -> Result<()> {
     use std::io::Write;
-    use std::os::unix::fs::OpenOptionsExt;
     let mut options = fs::OpenOptions::new();
     options.write(true).create_new(true);
     if private {
-        options.mode(0o600);
+        private_on_create(&mut options);
     }
     options
         .open(path)
@@ -203,17 +202,36 @@ fn validity_window(days: i64) -> (time::OffsetDateTime, time::OffsetDateTime) {
 
 /// Created 0700 explicitly; it holds CA private key material.
 fn create_staging_dir(dir: &Path) -> Result<()> {
-    use std::os::unix::fs::PermissionsExt;
     if !dir.exists() {
         fs::create_dir_all(dir)
             .map_err(|e| CertError::io(format!("creating {}", dir.display()), e))?;
     }
-    let mut perms = fs::metadata(dir)
-        .map_err(|e| CertError::io(format!("stat {}", dir.display()), e))?
-        .permissions();
-    perms.set_mode(0o700);
-    fs::set_permissions(dir, perms)
+    set_private_mode(dir, 0o700)
         .map_err(|e| CertError::io(format!("chmod 700 {}", dir.display()), e))
+}
+
+/// A new file opened private, 0600 on Unix.
+#[cfg(unix)]
+fn private_on_create(options: &mut fs::OpenOptions) {
+    use std::os::unix::fs::OpenOptionsExt;
+    options.mode(0o600);
+}
+
+/// Windows has no mode: a new file takes the ACL its directory passes down.
+#[cfg(not(unix))]
+fn private_on_create(_options: &mut fs::OpenOptions) {}
+
+/// A path's whole mode set, on Unix.
+#[cfg(unix)]
+pub(crate) fn set_private_mode(path: &Path, mode: u32) -> std::io::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    fs::set_permissions(path, fs::Permissions::from_mode(mode))
+}
+
+/// Windows has no mode: the path keeps the ACL its directory passes down.
+#[cfg(not(unix))]
+pub(crate) fn set_private_mode(_path: &Path, _mode: u32) -> std::io::Result<()> {
+    Ok(())
 }
 
 /// Refuse an output that already exists, or one file named twice.
