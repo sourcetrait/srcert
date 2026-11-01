@@ -17,3 +17,6 @@ serde.workspace = true
 snafu.workspace = true
 time.workspace = true
 toml.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+sourcetrait_acl.workspace = true

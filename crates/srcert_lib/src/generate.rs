@@ -85,13 +85,7 @@ impl CertFiles {
 /// Write a file that must not exist yet; a private key is private from its creation.
 fn write_new(path: &Path, contents: &str, private: bool) -> Result<()> {
     use std::io::Write;
-    let mut options = fs::OpenOptions::new();
-    options.write(true).create_new(true);
-    if private {
-        private_on_create(&mut options);
-    }
-    options
-        .open(path)
+    create_new(path, private)
         .and_then(|mut file| file.write_all(contents.as_bytes()))
         .map_err(|e| CertError::io(format!("writing {}", path.display()), e))
 }
@@ -200,26 +194,36 @@ fn validity_window(days: i64) -> (time::OffsetDateTime, time::OffsetDateTime) {
     (now, now + time::Duration::days(days))
 }
 
-/// Created 0700 explicitly; it holds CA private key material.
+/// Created private explicitly; it holds CA private key material.
 fn create_staging_dir(dir: &Path) -> Result<()> {
     if !dir.exists() {
         fs::create_dir_all(dir)
             .map_err(|e| CertError::io(format!("creating {}", dir.display()), e))?;
     }
     set_private_mode(dir, 0o700)
-        .map_err(|e| CertError::io(format!("chmod 700 {}", dir.display()), e))
+        .map_err(|e| CertError::io(format!("making {} private", dir.display()), e))
 }
 
-/// A new file opened private, 0600 on Unix.
+/// A new file opened for writing, a private one mode 0600.
 #[cfg(unix)]
-fn private_on_create(options: &mut fs::OpenOptions) {
+fn create_new(path: &Path, private: bool) -> std::io::Result<fs::File> {
     use std::os::unix::fs::OpenOptionsExt;
-    options.mode(0o600);
+    let mut options = fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    if private {
+        options.mode(0o600);
+    }
+    options.open(path)
 }
 
-/// Windows has no mode: a new file takes the ACL its directory passes down.
-#[cfg(not(unix))]
-fn private_on_create(_options: &mut fs::OpenOptions) {}
+/// A new file opened for writing, a private one the current user's alone.
+#[cfg(windows)]
+fn create_new(path: &Path, private: bool) -> std::io::Result<fs::File> {
+    if private {
+        return sourcetrait_acl::create_user_only(path);
+    }
+    fs::OpenOptions::new().write(true).create_new(true).open(path)
+}
 
 /// A path's whole mode set, on Unix.
 #[cfg(unix)]
@@ -228,10 +232,10 @@ pub(crate) fn set_private_mode(path: &Path, mode: u32) -> std::io::Result<()> {
     fs::set_permissions(path, fs::Permissions::from_mode(mode))
 }
 
-/// Windows has no mode: the path keeps the ACL its directory passes down.
-#[cfg(not(unix))]
-pub(crate) fn set_private_mode(_path: &Path, _mode: u32) -> std::io::Result<()> {
-    Ok(())
+/// A path made the current user's alone on Windows, which has no mode.
+#[cfg(windows)]
+pub(crate) fn set_private_mode(path: &Path, _mode: u32) -> std::io::Result<()> {
+    sourcetrait_acl::user_only(path)
 }
 
 /// Refuse an output that already exists, or one file named twice.
@@ -249,7 +253,7 @@ fn check_outputs(paths: &[&PathBuf]) -> Result<()> {
     Ok(())
 }
 
-/// Make each output's missing parent 0700; an existing one is left as it is.
+/// Make each output's missing parent private; an existing one is left as it is.
 fn make_parents(paths: &[&PathBuf]) -> Result<()> {
     for path in paths {
         if let Some(parent) = path.parent()

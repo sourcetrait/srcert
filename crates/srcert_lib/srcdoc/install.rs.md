@@ -72,8 +72,9 @@ keys even though it is not secret. `verify` needs a body to look for
 whichever trust model took the certificate, and having it beside the keys
 means verification does not depend on the staging directory surviving.
 
-Everything inside the secret tree goes go-rwx, public certificates
-included. They are not secret in themselves, but a 0644 file sitting
+Everything inside the secret tree goes private, go-rwx on Unix and the
+current user's alone on Windows, public certificates included. They are
+not secret in themselves, but a 0644 file sitting
 beside a CA key is an inconsistency waiting to be copied by the next
 person who adds a file here.
 
@@ -105,7 +106,8 @@ home and our own segments below it.
 Each level is created and chmod'd EXPLICITLY rather than through a
 recursive create, which takes its mode from the umask: under root's usual
 022 every level came out 0755, a world-traversable directory around a CA
-key. The created list is returned newest last so a failure can unwind it.
+key. On Windows each level's DACL becomes the current user's alone. The
+created list is returned newest last so a failure can unwind it.
 
 ## fn rollback
 

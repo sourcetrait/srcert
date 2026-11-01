@@ -516,6 +516,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "sourcetrait_acl"
+version = "0.0.0-2"
+dependencies = [
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "srcert"
 version = "0.0.0-5"
 dependencies = [
@@ -532,6 +539,7 @@ dependencies = [
  "rcgen",
  "serde",
  "snafu",
+ "sourcetrait_acl",
  "time",
  "toml",
 ]

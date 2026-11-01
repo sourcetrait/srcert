@@ -75,14 +75,19 @@ fn a_profile_without_secret_data_names_none() {
     assert!(parse(BASE).expect("parses").secret_data.is_none());
 }
 
+/// An absolute path on the platform under test.
+#[cfg(unix)]
+const ABSOLUTE: &str = "/srv/secret";
+
+/// An absolute path on the platform under test.
+#[cfg(windows)]
+const ABSOLUTE: &str = r"C:\srv\secret";
+
 #[test]
 fn a_profile_may_name_its_secret_data_home() {
-    let text = format!("secret_data = \"/srv/secret\"\n{BASE}");
+    let text = format!("secret_data = '{ABSOLUTE}'\n{BASE}");
     let config = parse(&text).expect("parses");
-    assert_eq!(
-        config.secret_data,
-        Some(std::path::PathBuf::from("/srv/secret"))
-    );
+    assert_eq!(config.secret_data, Some(std::path::PathBuf::from(ABSOLUTE)));
 }
 
 /// A home lookup is identity-derived, so the profile names the path whole.

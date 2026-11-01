@@ -1,7 +1,5 @@
 //! Generate locks: an entity minted under an existing authority, and the files
 //! named whole in place of the dirs.
-use std::os::unix::fs::PermissionsExt;
-
 use crate::config::CertGenConfig;
 use crate::generate::{
     AuthorityFiles, CertFiles, EntityFiles, certs_dir, generate, generate_authority,
@@ -143,7 +141,7 @@ fn an_authority_minted_into_named_files_signs_an_entity_beside_it() {
         },
     )
     .expect("the authority into named files");
-    assert_eq!(mode(&authority.authority_private), 0o600, "the CA key is private");
+    assert!(private_file(&authority.authority_private), "the CA key is private");
 
     let entity = EntityFiles {
         entity_private: dir.join("example-one.entity.key.pem"),
@@ -163,8 +161,35 @@ fn named(dir: &std::path::Path) -> CertFiles {
     }
 }
 
+/// A path's permission bits, on Unix.
+#[cfg(unix)]
 fn mode(path: &std::path::Path) -> u32 {
+    use std::os::unix::fs::PermissionsExt;
     std::fs::metadata(path).unwrap().permissions().mode() & 0o777
+}
+
+/// Whether a key file is private: 0600 on Unix, the user's alone on Windows.
+fn private_file(path: &std::path::Path) -> bool {
+    #[cfg(unix)]
+    {
+        mode(path) == 0o600
+    }
+    #[cfg(windows)]
+    {
+        sourcetrait_acl::is_user_only(path).unwrap()
+    }
+}
+
+/// Whether a directory is private: 0700 on Unix, the user's alone on Windows.
+fn private_dir(path: &std::path::Path) -> bool {
+    #[cfg(unix)]
+    {
+        mode(path) == 0o700
+    }
+    #[cfg(windows)]
+    {
+        sourcetrait_acl::is_user_only(path).unwrap()
+    }
 }
 
 #[test]
@@ -174,9 +199,9 @@ fn generate_files_writes_the_four_files_named() {
     let files = generate_files(&config(), named(&dir)).expect("mint into named files");
 
     assert!(files.exist(), "all four files are written");
-    assert_eq!(mode(&files.authority_private), 0o600, "the CA key is private");
-    assert_eq!(mode(&files.entity_private), 0o600, "the leaf key is private");
-    assert_eq!(mode(&dir), 0o700, "a parent the run makes is private");
+    assert!(private_file(&files.authority_private), "the CA key is private");
+    assert!(private_file(&files.entity_private), "the leaf key is private");
+    assert!(private_dir(&dir), "a parent the run makes is private");
     let cert = std::fs::read_to_string(&files.entity_public).unwrap();
     assert!(cert.contains("BEGIN CERTIFICATE"), "the entity cert is PEM");
 }
@@ -198,7 +223,7 @@ fn an_entity_is_minted_into_named_files_under_a_named_authority() {
         generate_entity_files(&config(), &authority, second).expect("an entity beside the first");
 
     assert!(entity.exist(), "both entity files are written");
-    assert_eq!(mode(&entity.entity_private), 0o600, "the leaf key is private");
+    assert!(private_file(&entity.entity_private), "the leaf key is private");
     let names: Vec<String> = std::fs::read_dir(&shared)
         .unwrap()
         .flatten()

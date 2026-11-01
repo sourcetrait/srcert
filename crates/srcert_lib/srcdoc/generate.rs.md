@@ -47,11 +47,12 @@ whole justification is a small blast radius.
 
 ## fn write_new
 
-A private key is created 0600, never written and then narrowed. A file
-named by the caller may sit in a directory wider than the staging
-directory's 0700, so a write followed by a chmod would leave the key
-readable between the two. `create_new` also refuses a file that appeared
-after the outputs were checked, so nothing is ever written over.
+A private key is created private, 0600 on Unix and the current user's
+alone on Windows, never written and then narrowed. A file named by the
+caller may sit in a directory wider than the staging directory, so a write
+followed by a narrowing would leave the key readable between the two.
+`create_new` also refuses a file that appeared after the outputs were
+checked, so nothing is ever written over.
 
 ## fn generate
 
@@ -76,7 +77,7 @@ handshake and names nothing local.
 
 The file form of `generate`, added for an authority kept under names of
 its own (the_user). Each output must not exist and no file may be named twice,
-both checked before anything is minted. A missing parent is made 0700, as
+both checked before anything is minted. A missing parent is made private, as
 the staging directory is; an existing one is left as it is, since it may
 be shared, which is why `write_new` creates each key private.
 
@@ -110,7 +111,20 @@ rather than this function. The note is above; this computes a window.
 
 Created 0700 EXPLICITLY rather than inheriting the caller's umask,
 because the directory holds CA private key material for the moments
-between minting and installing.
+between minting and installing. On Windows its DACL becomes the current
+user's alone, which the files made in it inherit.
+
+## fn create_new
+
+Windows' open takes no mode, so a private file there is created through
+sourcetrait_acl, its DACL given in the create call itself, private from its
+first instant as Unix's mode 0600 makes it.
+
+## fn set_private_mode
+
+The mode named is Unix's alone. On Windows the path's DACL is replaced by
+the current user's full control, protected, and a directory's passes to what
+is made in it, so 0600 and 0700 come to the same thing there.
 
 ## fn check_outputs
 
@@ -120,7 +134,7 @@ run whole, as an existing output is refused.
 
 ## fn make_parents
 
-Only a parent the run creates is narrowed to 0700. Narrowing an existing
+Only a parent the run creates is made private. Narrowing an existing
 one would change a directory the caller shares with other material.
 
 ## fn authority_params
@@ -148,7 +162,7 @@ The entity-only counterpart to `CertFiles`: two paths, not four. A host
 joining a shared authority holds its own leaf and the peers' public
 leaves it pins - never the CA private key, which stays with the authority
 holder. So `generate_entity` writes only `entity_<name>.{,key.}pem`, and
-this names them. `write` creates the private key 0600 exactly as
+this names them. `write` creates the private key private exactly as
 `CertFiles::write` does.
 
 ## fn generate_entity

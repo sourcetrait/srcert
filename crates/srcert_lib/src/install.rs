@@ -154,7 +154,7 @@ pub fn consume_staging(dir: &Path, files: &CertFiles) -> Staging {
     }
 }
 
-/// Create every missing level down to `target` at 0700, newest last.
+/// Create every missing level down to `target`, each private, newest last.
 fn create_private_chain(target: &Path) -> Result<Vec<PathBuf>> {
     let mut missing = Vec::new();
     let mut cursor = Some(target);
@@ -177,16 +177,16 @@ fn create_private_chain(target: &Path) -> Result<Vec<PathBuf>> {
 
         if let Err(e) = crate::generate::set_private_mode(&path, 0o700) {
             rollback(&created);
-            return Err(CertError::io(format!("chmod 700 {}", path.display()), e));
+            return Err(CertError::io(format!("making {} private", path.display()), e));
         }
     }
     Ok(created)
 }
 
-/// go-rwx on a file we placed in the secret tree.
+/// A file we placed in the secret tree made private.
 fn restrict_file(path: &Path) -> Result<()> {
     crate::generate::set_private_mode(path, 0o600)
-        .map_err(|e| CertError::io(format!("chmod 600 {}", path.display()), e))
+        .map_err(|e| CertError::io(format!("making {} private", path.display()), e))
 }
 
 /// Whether this process runs as root; Windows has none.
